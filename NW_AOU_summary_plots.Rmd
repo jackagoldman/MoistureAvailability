@@ -1,0 +1,934 @@
+---
+title: "NW_AOU_summary_plots"
+author: "Jack Goldman"
+date: "2022-11-07"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+
+```
+
+Load Required Packages
+```{r}
+library(sf)
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+library(EnvStats)
+library(ggpubr)
+library(ggpattern)
+library(viridis)
+library(gridExtra)
+library(cowplot)
+
+```
+
+read in data
+```{r}
+AOU = read_sf("../AOU/Ontario_AOU.shp")
+imp.im = readRDS("../Moisture_AvailabilityxBurn_Severity/aouim_varImp_v0.RDS")
+imp.iq = readRDS("../Moisture_AvailabilityxBurn_Severity/aouiq_varImp_v00.RDS")
+```
+
+
+Create Variable importance plots
+
+Top 10 plots for the paper
+```{r}
+#Relative Importance Figure
+
+
+
+#extreme plot - bw
+ex.im.plot.bw<-imp.iq %>%
+   mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+   dplyr::slice_max(Gain, n = 10) %>% 
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+   mutate(Temporal_Dynamics = case_when(
+     grepl("m", Feature) ~ "Monthly",
+     grepl("y", Feature) ~ "Yearly"
+   )) %>% 
+   ggplot(aes(Gain, Feature, fill = Climate_Metrics), color = "black") +
+  geom_col_pattern(
+    aes(pattern = Temporal_Dynamics),
+    colour = "black",
+    pattern_fill = "black",
+    pattern_angle = 45,
+    pattern_density = 0.05,
+    pattern_spacing = 0.03,
+    position = position_dodge2(preserve = 'single')) +
+  scale_pattern_manual(values = c("none", "stripe"), "Temporal Dynamics",
+    guide = guide_legend(override.aes = list(fill = "white"))) +
+  theme(text = element_text(size = 10)) +
+  
+    scale_fill_manual(values = c("#808080", "#C0C0C0", "#313335"), "Climate Metrics", 
+                      guide = guide_legend(override.aes = list(pattern = "none")))+
+    scale_x_continuous(labels = scales::percent) + 
+  theme_bw()+
+  labs(title = "Extreme Burn Severity",  x = "Relative Influence (%)", y = "Climate Predictor") +
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(panel.background = element_blank())
+  
+
+#medianplot - bw
+md.im.plot.bw <- imp.im %>%
+   mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+   dplyr::slice_max(Gain, n = 10) %>% 
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+   mutate(Temporal_Dynamics = case_when(
+     grepl("m", Feature) ~ "Monthly",
+     grepl("y", Feature) ~ "Yearly"
+   )) %>% 
+   ggplot(aes(Gain, Feature, fill = Climate_Metrics), color = "black") +
+  geom_col_pattern(
+    aes(pattern = Temporal_Dynamics),
+    colour = "black",
+    pattern_fill = "black",
+    pattern_angle = 45,
+    pattern_density = 0.05,
+    pattern_spacing = 0.03,
+    position = position_dodge2(preserve = 'single')) +
+  scale_pattern_manual(values = c("none", "stripe"), "Temporal Dynamics",
+    guide = guide_legend(override.aes = list(fill = "white"))) +
+  theme(text = element_text(size = 10)) +
+  
+    scale_fill_manual(values = c("#808080", "#C0C0C0", "#313335"), "Climate Metrics", 
+                      guide = guide_legend(override.aes = list(pattern = "none")))+
+  scale_x_continuous(labels = scales::percent) + 
+  theme_bw()+
+  labs(title = "Median Burn Severity",  x = "Relative Influence (%)", y = "Climate Predictor") +
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(panel.background = element_blank())
+
+#
+ggarrange(md.im.plot.bw, ex.im.plot.bw, 
+          labels = c("A", "B"),
+          ncol = 2, nrow = 1, widths = c(1,1),
+          common.legend = TRUE, legend="bottom")
+ggsave("multiplot_figure.png")
+
+```
+
+
+
+all predictors for the appendix
+```{r}
+#Appendix plots
+
+#median
+full.imp.im.plot= imp.im %>%
+   mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+  mutate(Temporal_Dynamics = case_when(
+     grepl("yCsum", Feature) ~ "Yearly",
+     grepl("yRmean", Feature) ~ "Yearly",
+     grepl("mCsum", Feature) ~ "Monthly",
+     grepl("mRmean", Feature) ~ "Monthly",
+     grepl('m', Feature) ~ "Monthly",
+     grepl('y', Feature) ~ "Yearly"
+   )) %>% 
+   ggplot(aes(Gain, Feature, fill = Climate_Metrics, width = .8), color = "black") +
+  geom_col_pattern(
+    aes(pattern = Temporal_Dynamics),
+    colour = "black",
+    pattern_fill = "black",
+    pattern_angle = 45,
+    pattern_density = 0.05,
+    pattern_spacing = 0.03,
+    position = position_dodge2(preserve = 'single')) +
+ coord_flip() +
+  scale_pattern_manual(values = c("none", "stripe"), "Temporal Dynamics",
+    guide = guide_legend(override.aes = list(fill = "white"))) +
+  theme(text = element_text(size = 10)) +
+  
+    scale_fill_manual(values = c("#808080", "#C0C0C0", "#313335"), "Climate Metrics", 
+                      guide = guide_legend(override.aes = list(pattern = "none")))+
+  theme_bw()+
+  labs(title = "Median Burn Severity",  x = "Relative Influence (%)", y = "Climate Predictor") +
+    scale_x_continuous(labels = scales::percent)+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(panel.background = element_blank()) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+ # Extremes
+full.imp.iq.plot= imp.iq %>%
+   mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+   mutate(Temporal_Dynamics = case_when(
+     grepl("yCsum", Feature) ~ "Yearly",
+     grepl("yRmean", Feature) ~ "Yearly",
+     grepl("mCsum", Feature) ~ "Monthly",
+     grepl("mRmean", Feature) ~ "Monthly",
+     grepl('m', Feature) ~ "Monthly",
+     grepl('y', Feature) ~ "Yearly"
+   )) %>% 
+   ggplot(
+          aes(Gain, Feature, fill = Climate_Metrics, width = .8), color = "black") +
+  geom_col_pattern(
+    aes(pattern = Temporal_Dynamics),
+    colour = "black",
+    pattern_fill = "black",
+    pattern_angle = 45,
+    pattern_density = 0.05,
+    pattern_spacing = 0.015,
+    position = position_dodge2(preserve = 'single')) +
+ coord_flip() +
+  scale_pattern_manual(values = c("none", "stripe"), "Temporal Dynamics",
+    guide = guide_legend(override.aes = list(fill = "white"))) +
+  theme(text = element_text(size = 10)) +
+  
+    scale_fill_manual(values = c("#808080", "#C0C0C0", "#313335"), "Climate Metrics", 
+                      guide = guide_legend(override.aes = list(pattern = "none")))+
+  scale_x_continuous(labels = scales::percent)+
+  theme_bw()+
+  labs(title = "Extreme Burn Severity",  x = "Relative Influence (%)", y = "Climate Predictor") +
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(panel.background = element_blank()) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+full.imp.iq.plot
+
+#
+ggarrange(full.imp.iq.plot, full.imp.im.plot, 
+          labels = c("A", "B"),
+          ncol = 1, nrow = 2, widths = c(1,1),
+          heights = c(5,5),
+          common.legend = TRUE, legend="bottom")
+```
+
+
+Figure of Fires by month Month 
+
+```{r}
+
+# fires by month
+
+#read in data 
+bs_w = read.csv2("../OntBSdb/Clean_tables/NWOnShield_Fire_BS_v1.csv")
+
+#create plots
+ bs_w %>% 
+  filter(AOU == "in") %>%
+  mutate(FIRE_START = ymd(FIRE_START),
+         month = month(FIRE_START, 
+                       label = TRUE)) %>% 
+  ggplot(aes( x = month)) + 
+  geom_bar(fill = "darkgrey", color = "black") +
+  labs(x = "Month of Fire", y = "Frequency", 
+       title = "Distribution of Fires by Month in AOU") + 
+  theme_bw() +   
+  theme(plot.title = element_text(hjust = 0.5))+
+   theme(text = element_text(size = 10)) +
+   geom_text(aes(x = 7, y = 110, label = "n = 311", size = 10, alpha = 20)) +
+   ##geom_rect(aes(xmin = 7 - 0.5, xmax = 7 + 0.5, ymin = 110 - 10, ymax = 110 + 10),
+            ## fill = "transparent", color = "red",  size = 1.5) +
+   theme(legend.position = "none")
+ ggsave("dist_fires_month_inAOU_v1.png")
+ 
+#
+ bs_w %>% 
+   dplyr::filter(AOU == "in") %>% 
+   left_join(clim_bs, by = "raster_id") %>% 
+   mutate(FIRE_START = ymd(FIRE_START),
+          month = month(FIRE_START, 
+                        label = FALSE)) %>% 
+   mutate(
+     season = case_when(
+       month %in%  9:11 ~ "Fall",
+       month %in%  c(12, 1, 2)  ~ "Winter",
+       month %in%  3:5  ~ "Spring",
+       TRUE ~ "Summer")) %>% 
+   ggplot(aes( x = season)) + 
+   geom_bar(fill = "darkgrey", color = "black") +
+   labs(x = "Season of Fire", y = "Frequency", 
+        title = "Distribution of Fires by Season in AOU") + 
+   theme_bw()+ 
+   theme(plot.title = element_text(hjust = 0.5))
+
+# smaple size
+aouim.monthsum = bs_w %>% 
+  filter(AOU == "in") %>% 
+  left_join(clim_bs, by = "raster_id") %>% 
+  mutate(FIRE_START = ymd(FIRE_START),
+         month = month(FIRE_START, 
+                       label = FALSE)) %>% 
+  mutate(
+    Season = case_when(
+      month %in%  9:11 ~ "Fall",
+      month %in%  c(12, 1, 2)  ~ "Winter",
+      month %in%  3:5  ~ "Spring",
+      TRUE ~ "Summer")) %>% 
+  mutate(month2 = month(FIRE_START, 
+                        label = TRUE)) %>% 
+  group_by(month2) %>% 
+  summarise(count = n())
+
+
+bs_w %>% 
+   filter(AOU == "in") %>% 
+   mutate(FIRE_START = ymd(FIRE_START),
+          month = month(FIRE_START, 
+                        label = FALSE)) %>% 
+   mutate(
+     Season = case_when(
+       month %in%  9:11 ~ "Fall",
+       month %in%  c(12, 1, 2)  ~ "Winter",
+       month %in%  3:5  ~ "Spring",
+       TRUE ~ "Summer")) %>% 
+   mutate(month2 = month(FIRE_START, 
+                         label = TRUE)) %>% 
+   ggplot(aes( x = month2)) + 
+   geom_bar(aes( fill = Season), colour = "black") +
+   labs(x = "Month of Fire", y = "Frequency", 
+        title = "Distribution of Fires by Month in AOU") + 
+   geom_text(aes(x = 7, y = 110, label = "n = 311"), size = 6) +
+   theme_bw()+ 
+   theme(plot.title = element_text(hjust = 0.5)) +
+   theme(text = element_text(size = 10)) +
+   geom_text(aes(label = ..count..),stat = "count" , vjust = -0.2, size = 3)
+ 
+ggsave("dist_fires_month_inAOU_wSeason_v1.png")
+
+bs_w %>% 
+  filter(AOU == "in") %>% 
+  mutate(month = month(FIRE_START, 
+                       label = FALSE)) %>% 
+  mutate(
+    Season = case_when(
+      month %in%  9:11 ~ "Fall",
+      month %in%  c(12, 1, 2)  ~ "Winter",
+      month %in%  3:5  ~ "Spring",
+      TRUE ~ "Summer")) %>% 
+  mutate(month2 = month(FIRE_START, 
+                        label = TRUE)) %>% 
+  ggplot(aes( x = month2)) + 
+  geom_bar(aes( fill = Season), colour = "black") +
+  scale_fill_manual(values = c("#808080", "#C0C0C0", "#313335"), "Season", 
+                    guide = guide_legend(override.aes = list(pattern = "none")))+
+  labs(x = "Month of Fire", y = "Frequency", 
+       title = "Distribution of Fires by Month") + 
+  theme_bw()+ 
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(text = element_text(size = 10)) 
+ 
+ bs_w %>% 
+   filter(AOU == "in") %>% 
+   left_join(clim_bs, by = "raster_id") %>% 
+   mutate(FIRE_START = ymd(FIRE_START),
+          month = month(FIRE_START, 
+                        label = FALSE)) %>% 
+   mutate(
+     season = case_when(
+       month %in%  9:11 ~ "Fall",
+       month %in%  c(12, 1, 2)  ~ "Winter",
+       month %in%  3:5  ~ "Spring",
+       TRUE ~ "Summer")) %>% 
+   group_by(season) %>% 
+   summarise(n =n()) %>%
+   mutate(freq = n / sum(n))
+ 
+
+ 
+ #distribution of observed burn severity values
+ aouim_gg = bs_w %>% 
+   filter(AOU == "in") %>% 
+   left_join(clim_bs, by = "raster_id") %>% 
+   mutate(FIRE_START = ymd(FIRE_START),
+          month = month(FIRE_START, 
+                        label = FALSE)) %>% 
+   mutate(
+     season = case_when(
+       month %in%  9:11 ~ "Fall",
+       month %in%  c(12, 1, 2)  ~ "Winter",
+       month %in%  3:5  ~ "Spring",
+       TRUE ~ "Summer")) %>% 
+  ggplot(data = aouim_gg, aes(x = RBR_median.x, y = Fire_Year, group = Fire_Year, fill = ..x..)) +
+   geom_density_ridges_gradient(scale = 3, rel_min_height = 0.01) +
+   scale_fill_viridis(name = "RBR", option = "C") +
+   theme(axis.text.x = element_text(angle = 0, vjust = 0.5),
+         axis.text.y = element_text(angle = 0, hjust = 0.5))  +
+   labs(title = "Median Fire Severity Distrbutions per Fire Year from 1986 to 2020", 
+        x = "Median Fire Severity", y = "Fire Year") +
+   theme(
+     legend.position="right",
+     panel.spacing = unit(0.1, "lines"),
+     strip.text.x = element_text(size = 8)
+   ) + theme_ipsum() + 
+   theme(plot.title = element_text(hjust = 0.5, size = 7),
+         axis.title.x = element_text(hjust = 0.5, size = 7),
+         axis.title.y = element_text(hjust = 0.5, size =7 ) ,
+         legend.title =element_text( size = 7)) 
+    geom_text(aes(label = ..count..),stat = "count" , vjust = -0.2, size = 3)
+  
+ ggsave("median_fs_py_aouim_v1.png")
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+```
+
+
+Model Performance Figure
+
+```{r}
+
+# model performance
+
+
+
+
+#############
+tib_training = aouim_res %>%  collect_metrics(summarize = FALSE)  
+tib_training = tib_training %>%  mutate(dataset = c("training", "training","training", "training", "training", "training", "training", "training", "training", "training",
+                                                    "training", "training","training", "training","training", "training","training", "training","training", "training"))
+tib_test = aouim.ttres %>%  collect_metrics(summarize = FALSE)
+tib_test = tib_test %>%  mutate(dataset = c("testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing",
+                                            "testing", "testing", "testing", "testing", "testing", "testing"))
+
+xlabels = c("Testing", "Training")
+perf_tib2 = tib_training %>%  full_join(tib_test)  %>% 
+  pivot_wider( names_from = ".metric",
+               values_from = ".estimate") 
+perf_plotm_rmse = perf_tib2 %>%  
+  ggplot(aes(x = dataset, y = rmse, fill = dataset)) +
+  geom_boxplot(fill = "darkgrey", alpha=0.7) +
+  stat_summary(fun=mean, geom="point", shape=20, size=8, color="black", fill="black") +
+  theme(legend.position="none") +
+  theme_bw() + 
+  theme(legend.position="none") +
+  labs(title = "Median Burn Severity", y= "RMSE") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_discrete(labels = xlabels)+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size =15))
+ggsave("aouim_perf_rmse.pdf")
+  
+perf_plot_rsq = perf_tib2 %>%  
+  ggplot(aes(x = dataset, y = rsq, fill = dataset)) +
+  geom_boxplot(fill= "darkgrey", alpha=0.7) +
+  stat_summary(fun=mean, geom="point", shape=20, size=8, color="black", fill="black") +
+  theme(legend.position="none") + 
+  theme_bw() + 
+  theme(legend.position="none") +
+  labs(title = "Median Burn Severity",  y= "R-squared") +
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(axis.title.x = element_blank()) +
+  scale_x_discrete(labels = xlabels)+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size =15)) 
+ggsave("aouim_perf_rsq.pdf")
+
+
+#
+q_train = bt_res %>%  collect_metrics(summarize = FALSE)  
+q_train = q_train %>%  mutate(dataset = c("training", "training","training", "training", "training", "training", "training", "training", "training", "training",
+                                                    "training", "training","training", "training","training", "training","training", "training","training", "training"))
+q_test = aouiq.ttres %>%  collect_metrics(summarize = FALSE)
+q_test = q_test %>%  mutate(dataset = c("testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing",
+                                            "testing", "testing", "testing", "testing", "testing", "testing"))
+
+xlabels = c("Testing", "Training")
+perf_tibq = q_train %>%  full_join(q_test)  %>% 
+  pivot_wider( names_from = ".metric",
+               values_from = ".estimate") 
+plot_perfq_rmse = perf_tibq %>%  
+  ggplot(aes(x = dataset, y = rmse, fill = dataset)) +
+  geom_boxplot(fill = "darkgrey", alpha=0.7) +
+  stat_summary(fun=mean, geom="point", shape=20, size=8, color="black", fill="black") +
+  theme(legend.position="none") +
+  theme_bw() + 
+  theme(legend.position="none") +
+  labs(title = "Extreme Burn Severity", y= "RMSE") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_discrete(labels = xlabels)+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size =15))
+ggsave("aouiq_perf_rmse.pdf")
+  
+plot_perfq_rsq= perf_tib2 %>% 
+  ggplot(aes(x = dataset, y = rsq, fill = dataset)) +
+  geom_boxplot(fill= "darkgrey", alpha=0.7) +
+  stat_summary(fun=mean, geom="point", shape=20, size=8, color="black", fill="black") +
+  theme(legend.position="none") + 
+  theme_bw() + 
+  theme(legend.position="none") +
+  labs(title = "Extreme Burn Severity",  y= "R-squared") +
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(axis.title.x = element_blank()) +
+  scale_x_discrete(labels = xlabels)+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size =15)) 
+ggsave("aouiq_perf_rsq.pdf")
+
+
+###
+perf_plot = ggarrange(perf_plotm_rmse, perf_plot_rsq, 
+          plot_perfq_rmse, plot_perfq_rsq, 
+          labels = c("A", "B", "C", "D"),
+          ncol = 2, nrow = 2, widths = c(1,1),
+          common.legend = TRUE, legend="bottom")
+
+
+annotate_figure(perf_plot, top = text_grob("Model Validation and Prediction Accuracy", 
+               color = "Black", face = "bold", size = 14))
+ggsave("model_performance_figure.pdf")
+
+```
+
+#### Relative influence percentages
+```{r}
+imp.im = readRDS("../Moisture_AvailabilityxBurn_Severity/aouim_varImp_v0.RDS")
+rel.per.imten = imp.im %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>% 
+     dplyr::slice_max(Gain, n = 10) %>% 
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+  mutate(Temporal_Dynamics = case_when(
+     grepl("yCsum", Feature) ~ "Yearly",
+     grepl("yRmean", Feature) ~ "Yearly",
+     grepl("mCsum", Feature) ~ "Monthly",
+     grepl("mRmean", Feature) ~ "Monthly",
+     grepl('m', Feature) ~ "Monthly",
+     grepl('y', Feature) ~ "Yearly"
+   )) %>% 
+  group_by(Temporal_Dynamics) %>% 
+  summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x = Temporal_Dynamics)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() + 
+  labs(title ="Median Burn Severity", 
+         x ="Temporal Dynamics", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+
+rel.per.iqten = imp.iq %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>% 
+     dplyr::slice_max(Gain, n = 10) %>% 
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+  mutate(Temporal_Dynamics = case_when(
+     grepl("yCsum", Feature) ~ "Yearly",
+     grepl("yRmean", Feature) ~ "Yearly",
+     grepl("mCsum", Feature) ~ "Monthly",
+     grepl("mRmean", Feature) ~ "Monthly",
+     grepl('m', Feature) ~ "Monthly",
+     grepl('y', Feature) ~ "Yearly"
+   )) %>% 
+  group_by(Temporal_Dynamics) %>% 
+  summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x = Temporal_Dynamics)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() + 
+  labs(title ="Extreme Burn Severity", 
+         x ="Temporal Dynamics", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+
+ten_per_plot = ggarrange(rel.per.imten , 
+                         rel.per.iqten , 
+                         labels = c("A", "B"),
+                         ncol = 2, 
+                         nrow = 1,
+                         widths = c(1,1),
+                         common.legend = TRUE, 
+                         legend="bottom")
+
+ten_plot = annotate_figure(ten_per_plot, top = text_grob("Relative influence of Top 10 Predictors", 
+               color = "Black", face = "bold", size = 14))
+
+#all
+rel.per.imall  = imp.im %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>%
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+  mutate(Temporal_Dynamics = case_when(
+     grepl("yCsum", Feature) ~ "Yearly",
+     grepl("yRmean", Feature) ~ "Yearly",
+     grepl("mCsum", Feature) ~ "Monthly",
+     grepl("mRmean", Feature) ~ "Monthly",
+     grepl('m', Feature) ~ "Monthly",
+     grepl('y', Feature) ~ "Yearly"
+   )) %>% 
+  group_by(Temporal_Dynamics) %>% 
+  summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x = Temporal_Dynamics)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() + 
+  labs(title ="Median Burn Severity", 
+         x ="Temporal Dynamics", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+
+rel.per.iqall= imp.iq %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>% 
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+  mutate(Temporal_Dynamics = case_when(
+     grepl("yCsum", Feature) ~ "Yearly",
+     grepl("yRmean", Feature) ~ "Yearly",
+     grepl("mCsum", Feature) ~ "Monthly",
+     grepl("mRmean", Feature) ~ "Monthly",
+     grepl('m', Feature) ~ "Monthly",
+     grepl('y', Feature) ~ "Yearly"
+   )) %>% 
+  group_by(Temporal_Dynamics) %>% 
+  summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x = Temporal_Dynamics)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() +  
+  labs(title ="Extreme Burn Severity", 
+         x ="Temporal Dynamics", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+rel.per.imall
+
+all_per_plot = ggarrange(rel.per.imall ,
+                         rel.per.iqall,
+                         labels = c("C", "D"),
+                         ncol = 2, 
+                         nrow = 1,
+                         widths = c(1,1),
+          common.legend = TRUE, legend="bottom")
+
+all_plot = annotate_figure(all_per_plot, top = text_grob("Relative influence of All Predictors", 
+               color = "Black", face = "bold", size = 14, vjust = 0.1))
+
+ggarrange(ten_plot, all_plot,
+          ncol =1, nrow = 2)
+ 
+```
+
+
+ggarrange(ten_plot, all_plot,
+          ncol =1, nrow = 2) + 
+  theme(plot.margin = margin(0.1,0.1,2,0.1, "cm"))
+
+
+
+```{r}
+rel.perm.mten = imp.im %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>% 
+     dplyr::slice_max(Gain, n = 10) %>% 
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+  group_by(Climate_Metrics) %>% 
+  summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x = Climate_Metrics)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() + 
+  labs(title ="Median Burn Severity", 
+         x ="Climate Metrics", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+rel.perm.mten
+
+rel.perm.qten = imp.iq %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>% 
+     dplyr::slice_max(Gain, n = 10) %>% 
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+  group_by(Climate_Metrics) %>% 
+  summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x = Climate_Metrics)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() + 
+  labs(title ="Extreme Burn Severity", 
+         x ="Climate Metrics", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+
+rel.perm.qten
+
+ten_perm_plot = ggarrange(rel.perm.mten ,
+                         rel.perm.qten , 
+                         labels = c("A", "B"),
+                         ncol = 2, 
+                         nrow = 1,
+                         widths = c(1,1),
+                         common.legend = TRUE, 
+                         legend="bottom")
+
+tenm_plot = annotate_figure(ten_perm_plot, top = text_grob("Relative influence of Top 10 Predictors", 
+               color = "Black", face = "bold", size = 14))
+
+# all
+rel.perm.mall = imp.im %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>% 
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+  group_by(Climate_Metrics) %>% 
+  summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x = Climate_Metrics)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() + 
+  labs(title ="Median Burn Severity", 
+         x ="Climate Metrics", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+rel.perm.mall
+
+rel.perm.qall = imp.iq %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>%  
+   mutate(Climate_Metrics = case_when(
+     grepl("C", Feature) ~ "Climate Moisture Index",
+     grepl("R", Feature) ~ "Relative Humidity",
+     grepl("T", Feature) ~"Maximum Temperature"
+   )) %>% 
+  group_by(Climate_Metrics) %>% 
+  summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x = Climate_Metrics)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() + 
+  labs(title ="Extreme Burn Severity", 
+         x ="Climate Metrics", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+
+rel.perm.qall
+
+all_perm_plot = ggarrange(rel.perm.mall ,  
+                         rel.perm.qall , 
+                         labels = c("C", "D"),
+                         ncol = 2, 
+                         nrow = 1,
+                         widths = c(1,1),
+                         common.legend = TRUE, 
+                         legend="bottom")
+
+all_m_plot = annotate_figure(all_perm_plot, top = text_grob("Relative influence of All Predictors", 
+               color = "Black", face = "bold", size = 14))
+
+```
+
+ggarrange(tenm_plot, all_m_plot,
+          ncol =1, nrow = 2) + 
+  theme(plot.margin = margin(0.1,0.1,2,0.1, "cm"))
+
+imp.iq
+
+```{r}
+#temporal cumualtive effects
+rel.perm.tall = imp.im %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>% 
+   mutate(Temporal_Cumulative_Effects = case_when(
+     grepl("yCsum", Feature) ~ "Interannual",
+     grepl("yRmean", Feature) ~ "Interannual",
+     grepl("mCsum", Feature) ~ "Intra-annual",
+     grepl("mRmean", Feature) ~"Intra-annual",
+   ))  %>% 
+  group_by(Temporal_Cumulative_Effects) %>%
+  filter(!is.na(Temporal_Cumulative_Effects)) %>% 
+  summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x = Temporal_Cumulative_Effects)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() + 
+  labs(title ="Median Burn Severity", 
+         x ="Temporal Cumulative Effects", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+rel.perm.tall
+
+rel.perq.tall = imp.iq %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>%  
+   mutate(Temporal_Cumulative_Effects = case_when(
+     grepl("yCsum", Feature) ~ "Interannual",
+     grepl("yRmean", Feature) ~ "Interannual",
+     grepl("mCsum", Feature) ~ "Intra-annual",
+     grepl("mRmean", Feature) ~"Intra-annual",
+   ))  %>% 
+  group_by(Temporal_Cumulative_Effects) %>%
+  filter(!is.na(Temporal_Cumulative_Effects)) %>% 
+    summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x =Temporal_Cumulative_Effects)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() + 
+  labs(title ="Extreme Burn Severity", 
+         x ="Temporal Cumulative Effects", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+
+rel.perq.tall
+
+all_pert_plot = ggarrange(rel.perm.tall ,  
+                         rel.perq.tall , 
+                         labels = c("C", "D"),
+                         ncol = 2, 
+                         nrow = 1,
+                         widths = c(1,1),
+                         common.legend = TRUE, 
+                         legend="bottom")
+
+all_t_plot = annotate_figure(all_pert_plot, top = text_grob("Relative influence Among Cumulative Metrics", 
+               color = "Black", face = "bold", size = 14))
+
+
+### temp vs non-cumulative
+rel.perm.tall_ny = imp.im %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>% 
+   mutate(Temporal_Cumulative_Effects = case_when(
+     grepl("yCsum", Feature) ~ "Cumulative",
+     grepl("yRmean", Feature) ~ "Cumulative",
+     grepl("mCsum", Feature) ~ "Cumulative",
+     grepl("mRmean", Feature) ~"Cumulative",
+   ))  %>% 
+  group_by(Temporal_Cumulative_Effects) %>%
+  replace(is.na(.), "Non-Cumulative") %>% 
+  summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x = Temporal_Cumulative_Effects)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() + 
+  labs(title ="Median Burn Severity", 
+         x ="Temporal Cumulative Effects", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+rel.perm.tall_ny
+
+rel.perq.tall_ny = imp.iq %>%
+   mutate(Feature = 
+            fct_reorder(Feature, Gain)) %>%  
+ mutate(Temporal_Cumulative_Effects = case_when(
+     grepl("yCsum", Feature) ~ "Cumulative",
+     grepl("yRmean", Feature) ~ "Cumulative",
+     grepl("mCsum", Feature) ~ "Cumulative",
+     grepl("mRmean", Feature) ~"Cumulative",
+   ))  %>% 
+  group_by(Temporal_Cumulative_Effects) %>%
+   replace(is.na(.), "Non-Cumulative") %>% 
+    summarise(total_inf = sum(Gain)) %>% 
+  ggplot(aes(y= total_inf, x =Temporal_Cumulative_Effects)) +
+  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+           width = 0.6)+
+  scale_y_continuous(labels = scales::percent) + 
+  theme_bw() + 
+  labs(title ="Extreme Burn Severity", 
+         x ="Temporal Cumulative Effects", 
+          y ="Relative Influence (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+  scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
+  theme(plot.margin = margin(2,2,2,2, "mm"))
+
+rel.perq.tall_ny
+
+all_pert_plot_ny = ggarrange(rel.perm.tall_ny ,  
+                         rel.perq.tall_ny , 
+                         labels = c("A", "B"),
+                         ncol = 2, 
+                         nrow = 1,
+                         widths = c(1,1),
+                         common.legend = TRUE, 
+                         legend="bottom")
+
+all_t_plot_ny = annotate_figure(all_pert_plot_ny, top = text_grob("Relative influence of All Predictors", 
+               color = "Black", face = "bold", size = 14))
+
+```
+
+ggarrange(all_t_plot_ny, all_t_plot,
+          ncol =1, nrow = 2) + 
+  theme(plot.margin = margin(0.1,0.1,2,0.1, "cm"))
+

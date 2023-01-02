@@ -1,0 +1,812 @@
+---
+title: "NW_AOU_BRT"
+author: "Jack Goldman"
+date: "2022-10-04"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache = TRUE)
+```
+
+#####  Machine Learning Analysis for Moisture availability 
+# Load required packages
+
+```{r}
+library(caret)
+library(gbm)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(tidymodels)
+```
+
+
+## Build datasets for testin and training
+
+Attach climate data to burn severity data 
+```{r read csv, include= FALSE}
+bs_w = read.csv2("../OntBSdb//Clean_tables/NWOnShield_Fire_BS_v1.csv")
+clim_bs = read.csv2("../Moisture_AvailabilityxBurn_Severity/bs_moisture_db_v0.csv")
+names (clim_bs) = clim_bs %>% names () %>%  str_replace_all(.,"^X", "")
+```
+
+```{r merge and remove uneccesary columns, cache = TRUE, include = FALSE}
+#merge
+clim_bs_w = bs_w %>% select (raster_id, AOU) %>% 
+  left_join( clim_bs, by = "raster_id")
+
+#split to inside/outside AOU
+
+aoui = clim_bs_w %>%as_tibble(.name_repair = "universal") %>% dplyr::filter(AOU == "in") 
+aouo = clim_bs_w %>%  filter(AOU == "out")
+
+#remove unneccesary column
+aoui = aoui %>% select(-c(1:3))
+aouo = aouo %>%  select(-c(1:2))
+
+#split into Median and Extreme data
+aoui.m = aoui %>%  select(-c(2))
+aoui.q = aoui %>%  select(-c(1))
+aouo.m = aouo %>% select(-c(2))
+aouo.q = aouo %>%  select(-c(1))
+
+# save as rds
+write.csv2(aoui.m, "../Moisture_AvailabilityxBurn_Severity/aoui_mv0.csv")
+write.csv(aoui.q, "../Moisture_AvailabilityxBurn_Severity/aoui_q.csv")
+write.csv(aouo.m, "../Moisture_AvailabilityxBurn_Severity/aouo_m.csv")
+write.csv(aouo.q, "../Moisture_AvailabilityxBurn_Severity/aouo_q.csv")
+#readin
+aoui_m = read.csv2("../Moisture_AvailabilityxBurn_Severity/aoui_mv0.csv")
+
+names (aoui_m) = aoui_m %>% names () %>%  str_replace_all(.,"^..", "")
+aoui_m = aoui_m %>% dplyr::select(-c(1))
+aoui_m = aoui_m %>% dplyr::select(-c(26:49))
+
+aoui_m <- read.csv("aoui_q.csv")
+
+names (aoui_m) = aoui_m %>% names () %>%  str_replace_all(.,"^X", "") 
+  
+aoui_m = aoui_m %>% select(-c(1,3))
+
+```
+
+Make testing and training data and save
+```{r, testing and training, cache = TRUE, inclue = FALSE}
+#set seed for reproducibility
+set.seed(429)
+
+#inside aou quant
+aouiq_split <- initial_split(aoui_q)
+aouiq_train <- training(aouiq_split)
+aouiq_test  <- testing(aouiq_split)
+
+write.csv(aouiq_train, "../Moisture_AvailabilityxBurn_Severity/aoui_train_q.csv")
+write.csv(aouiq_test, "../Moisture_AvailabilityxBurn_Severity/aoui_test_q.csv")
+write.csv(aouiq_split, "aoui_split_q.csv")
+#inside aou median
+set.seed(429) # set seed for reproducibility
+
+aouim_split <- initial_split(aoui_m)
+aouim_train <- training(aouim_split)
+aouim_test  <- testing(aouim_split)
+
+write.csv(aouim_train, "aoui_train_m.csv")
+write.csv(aouim_test, "aoui_test_m.csv")
+
+
+#outside aou median
+set.seed(429) # set seed for reproducibility
+
+aouom_split <- initial_split(aouo.m)
+aouom_train <- training(aouom_split)
+aouom_test  <- testing(aouom_split)
+
+
+write.csv(aouom_train, "aouo.train.m.csv")
+write.csv(aouom_test, "aouo.test.m.csv")
+
+#outside aou quantile
+set.seed(429) # set seed for reproducibility
+
+aouoq_split <- initial_split(aouo.q)
+aouoq_train <- training(aouoq_split)
+aouoq_test  <- testing(aouoq_split)
+
+
+write.csv(aouoq_train, "aouo.train.q.csv")
+write.csv(aouoq_test, "aouo.test.q.csv")
+
+
+```
+
+### Develop first model for Extremes inside the AOU ###
+
+```{r}
+#read
+aouiq_train = read.csv("../Moisture_AvailabilityxBurn_Severity/aoui_train_q.csv")
+aouiq_test = read.csv("../Moisture_AvailabilityxBurn_Severity/aoui_test_q.csv")
+aouiq_train %>%  view()
+names (aouiq_train) = aouiq_train %>% names () %>%  str_replace_all(.,"^X", "")
+names (aouiq_test) = aouiq_test %>% names () %>%  str_replace_all(.,"^X", "")
+
+#
+aouiq_train  = aouiq_train %>% as_tibble(.name_repair = "universal") %>% select(-c(28:51))
+aouiq_train = aouiq_train %>%  select(-c(1:2))
+names (aouiq_train) = aouiq_train %>% names () %>%  str_replace_all(.,"^..", "")
+
+#
+aouiq_test  = aouiq_test %>% as_tibble(.name_repair = "universal") %>% select(-c(28:51))
+aouiq_test = aouiq_test %>%  select(-c(1:2))
+names (aouiq_test) = aouiq_test %>% names () %>%  str_replace_all(.,"^X", "")
+names (aouiq_test) = aouiq_test %>% names () %>%  str_replace_all(.,"^..", "")
+view(aouiq_test)
+
+```
+
+First thing is to set up the defaults of the model. These are the metric that 
+will be used to compare the trees and we use mean absolute error (MAE). 
+We also set up the control grid for tuning. Additionally, we set up the cross-
+validation process for our training model using 10-fold
+```{r}
+#set up defaults
+mset <- metric_set(rmse) # metric is MAE
+control <- control_grid(save_workflow = TRUE,
+                        save_pred = TRUE,
+                        extract = extract_model) # grid for tuning
+
+aouiq_train %>%  view()
+
+
+set.seed(429)
+aouiq_folds <- vfold_cv(aouiq_train, v = 10)
+```
+
+Next step is to build up the recipe, or our model fit
+```{r}
+# build recipe
+bt_reg_fit = recipe(R_quant ~., data = aouiq_train) %>% 
+  step_normalize(all_numeric_predictors()) %>% 
+  step_zv(all_predictors()) %>% 
+  step_corr(all_numeric_predictors(), threshold = .8)
+```
+
+Now to specify the model
+```{r}
+tune_spec = 
+  boost_tree(trees =  1000,
+             tree_depth = tune(),
+             learn_rate = tune(),
+             min_n = tune(),
+             mtry = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("xgboost", counts = FALSE)
+```
+
+Set Workflow
+```{r}
+# set workflow
+
+boost_wf <- workflow() %>%
+  add_recipe(bt_reg_fit) %>% 
+  add_model(tune_spec)
+```
+
+Use 10-fold cross-validation to evaluate the model with different hyperparameters
+```{r, cache = TRUE}
+set.seed(429)
+boost_tune<-  boost_wf %>% 
+  tune_grid(resample = aouiq_folds,
+            metrics = mset,
+            control = control,
+            grid = crossing( 
+                    tree_depth = c(2,4,5,3),
+                    learn_rate = c(0.0001,0.005, 0.025),
+                    min_n = c(10, 15, 20),
+                    mtry = c(0.5)))
+
+saveRDS(boost_tune, "aouiq_tune.RDS")
+
+```
+
+Visualize the results
+```{r}
+
+boost_tune %>%  collect_metrics() %>% 
+  mutate(tree_depth = factor(tree_depth)) %>%
+  ggplot(aes(learn_rate, mean, color = tree_depth)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) +
+  scale_x_log10(labels = scales::label_number()) +
+  scale_color_viridis_d(option = "plasma", begin = .9, end = 0)
+
+```
+
+```{r}
+autoplot(boost_tune) + theme_light()
+```
+
+Collect and explore metrics
+```{r}
+boost_tune %>% 
+  collect_metrics() %>% 
+  arrange(desc(mean))
+
+```
+
+What is the best model?
+```{r}
+boost_tune %>% show_best("mae")
+
+```
+
+
+Use best config to fit model to training data.
+
+```{r, cache = TRUE}
+set.seed(429)
+xg_fit <- boost_wf %>% 
+  finalize_workflow(select_best(boost_tune)) %>% 
+  fit(aouiq_train)
+saveRDS(xg_fit, "aouiq_fit.RDS")
+```
+
+Check out accuracy on testing dataset to see if we overfitted.
+
+```{r, cache = TRUE}
+set.seed(429)
+xg_fit %>%
+  augment(aouiq_test, type.predict = "response") %>% 
+  rmse(R_quant, .pred) # 14 points off
+
+
+estimate_perf <- function(model, dat) {
+  # Capture the names of the `model` and `dat` objects
+  cl <- match.call()
+  obj_name <- as.character(cl$model)
+  data_name <- as.character(cl$dat)
+  data_name <- gsub("aouiq_", "", data_name)
+  
+  # Estimate these metrics:
+  reg_metrics <- metric_set(rmse, rsq)
+  
+  model %>%
+    predict(dat) %>%
+    bind_cols(dat %>% select(RBR_quant)) %>%
+    reg_metrics(RBR_quant, .pred) %>%
+    select(-.estimator) %>%
+    mutate(object = obj_name, data = data_name)
+}
+
+estimate_perf(xg_fit, aouiq_train)
+estimate_perf(xg_fit, aouiq_test)
+
+
+keep_pred <- control_resamples(save_pred = TRUE, save_workflow = TRUE)
+
+set.seed(429)
+bt_res <- 
+  xg_fit%>%  
+  fit_resamples(resamples = aouiq_folds, control = keep_pred)
+
+collect_metrics(bt_res)
+
+
+#resample test vs. train to evaluate model performance
+cvFolds.iqt <- aouiq_test %>% vfold_cv(10)
+aouiq_fittt <- boost_wf %>% 
+  finalize_workflow(select_best(boost_tune)) %>% 
+  fit(aouiq_test)
+aouiq.ttres <-  aouiq_fittt %>% fit_resamples(resamples = cvFolds.iqt, control = keep_pred)
+aouiq.ttres %>%  collect_metrics() # testing
+bt_res %>%  collect_metrics(summarize = TRUE) # training
+saveRDS(aouiq.ttres, "aouiq_test_accuracy.RDS")
+saveRDS(bt_res, "aouiq_training_accuracy.RDS")
+
+```
+
+Plot variable importance
+```{r}
+imp.iq <- xgboost::xgb.importance(model = extract_fit_engine(xg_fit))
+imp.iq %>%
+  mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+  dplyr::slice_max(Gain, n = 10) %>% 
+  ggplot(aes(Gain, Feature, fill = Feature)) +
+  geom_col() + scale_fill_viridis_d()+ theme_bw()  +
+  theme(legend.position="none") + 
+  labs(title = "Burn Severity Extremes within AOU", y = "Predictor") +
+  theme(plot.title = element_text(hjust = 0.5))
+saveRDS(imp.iq, "aouiq_varImp_v00.RDS")
+#save plot
+ggsave("aouiq_relimp_v2.png")
+```
+
+
+
+
+
+
+
+ *Lets develop a model for extremes outside the AOU* 
+
+**_We will use the same process described above_**
+
+```{r, cache = TRUE}
+#set up defaults
+mset <- metric_set(rmse) # metric is accuracy
+control <- control_grid(save_workflow = TRUE,
+                        save_pred = TRUE,
+                        extract = extract_model) # grid for tuning
+
+
+#10 fold cross val
+set.seed(429)
+cvFolds.oq <- aouoq_train %>% vfold_cv(v=10)
+
+# build recipe
+aouoq.rec = recipe(RBR_quant ~., data = aouoq_train) %>% 
+  step_normalize(all_predictors()) %>% 
+  step_zv(all_predictors()) %>% 
+  step_corr(all_numeric_predictors(), threshold = .8)
+  
+
+# specify BRT model
+tune_spec = 
+  boost_tree(trees =  1000,
+             tree_depth = tune(),
+             learn_rate = tune(),
+             min_n = tune(),
+             mtry = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("xgboost", counts = FALSE)
+
+
+# set workflow
+
+aouoq_wf <- workflow() %>%
+  add_recipe(aouoq.rec) %>% 
+  add_model(tune_spec)
+
+
+# use CV to evaluate the model with different hyperparameters
+aouoq_tune<-  aouoq_wf %>% 
+  tune_grid(resample = cvFolds.oq,
+            metrics = mset,
+            control = control,
+            grid = crossing( 
+                    tree_depth = c(2,4,5,3),
+                    learn_rate = c(0.001,0.005, 0.01),
+                    min_n = c(10, 15, 20),
+                    mtry = c(0.5, 0.65, 0.8)))
+```
+
+Visualize results
+```{r}
+#visualize the results
+aouoq_tune %>%  collect_metrics() %>% 
+  mutate(tree_depth = factor(tree_depth)) %>%
+  ggplot(aes(learn_rate, mean, color = tree_depth)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) +
+  scale_x_log10(labels = scales::label_number()) +
+  scale_color_viridis_d(option = "plasma", begin = .9, end = 0)
+
+autoplot(aouoq_tune) + theme_light()
+```
+
+Collect and explore metrics
+```{r}
+aouoq_tune %>% 
+  collect_metrics() %>% 
+  arrange(desc(mean))
+
+```
+
+What is the best model?
+```{r}
+aouoq_tune %>% show_best("rmse")
+```
+
+Use best config to fit model to training data.
+```{r, cache = TRUE}
+set.seed(429)
+aouoq_fit <- aouoq_wf %>% 
+  finalize_workflow(select_best(aouoq_tune)) %>% 
+  fit(aouoq_train)
+
+```
+Check out accuracy on testing dataset to see if we overfitted.
+```{r, cache = TRUE}
+set.seed(429)
+aouoq_fit %>%
+  augment(aouoq_test, type.predict = "response") %>% 
+  mae(RBR_quant, .pred)
+
+
+estimate_perf <- function(model, dat) {
+  # Capture the names of the `model` and `dat` objects
+  cl <- match.call()
+  obj_name <- as.character(cl$model)
+  data_name <- as.character(cl$dat)
+  data_name <- gsub("aouoq_", "", data_name)
+  
+  # Estimate these metrics:
+  reg_metrics <- metric_set(rmse, rsq)
+  
+  model %>%
+    predict(dat) %>%
+    bind_cols(dat %>% select(RBR_quant)) %>%
+    reg_metrics(RBR_quant, .pred) %>%
+    select(-.estimator) %>%
+    mutate(object = obj_name, data = data_name)
+}
+
+estimate_perf(aouoq_fit, aouoq_train)
+estimate_perf(aouoq_fit, aouoq_test)
+
+
+keep_pred <- control_resamples(save_pred = TRUE, save_workflow = TRUE)
+
+set.seed(429)
+aouoq_res <- 
+  aouoq_fit%>%  
+  fit_resamples(resamples = cvFolds.oq, control = keep_pred)
+
+
+#resample test vs. train to evaluate model performance
+cvFolds.oqt <- aouoq_test %>% vfold_cv(10)
+aouoq_fittt <- aouoq_wf %>% 
+  finalize_workflow(select_best(aouoq_tune)) %>% 
+  fit(aouoq_test)
+aouoq.ttres <-  aouoq_fittt %>% fit_resamples(resamples = cvFolds.oqt, control = keep_pred)
+aouoq.ttres %>%  collect_metrics()#testing
+aouoq_res %>%  collect_metrics(summarize = TRUE) #training (overfit)
+saveRDS(aouoq.ttres, "aouoq_test_accuracy.RDS")
+saveRDS(aouoq_res, "aouoq_training_accuracy.RDS")
+
+```
+
+variable importance?
+```{r}
+imp.oq <- xgboost::xgb.importance(model = extract_fit_engine(aouoq_fit))
+imp.oq
+imp.oq %>%
+  mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+  dplyr::slice_max(Gain, n = 10)  %>% 
+  ggplot(aes(Gain, Feature, fill = Feature)) +
+  geom_col() + scale_fill_viridis_d()+ theme_bw()  +
+  theme(legend.position="none") + 
+  labs(title = "Burn Severity Extremed outside AOU", y = "Predictor") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+saveRDS(imp.oq, "aouoq_varImp_v0.rds")
+ggsave("aouoq_relimp_v2.png")
+
+```
+
+
+
+
+*Lets develop a model for median burn severity within the AOU*
+
+**_We will use the same process described above_**
+
+```{r, cache = TRUE}
+
+#read
+aouim_train = read.csv("../Moisture_AvailabilityxBurn_Severity//aoui_train_m.csv")
+aouim_test = read.csv("../Moisture_AvailabilityxBurn_Severity//aoui_test_m.csv")
+aouim_train %>%  view()
+names (aouim_train) = aouim_train %>% names () %>%  str_replace_all(.,"^X", "")
+names (aouim_test) = aouim_test %>% names () %>%  str_replace_all(.,"^X", "")
+aouim_train  = aouim_train %>%  select(-c(1))
+aouim_test = aouim_test %>%  select(-c(1))
+aouim_train %>%  view()
+
+#set up defaults
+mset <- metric_set(rmse) # metric is accuracy
+control <- control_grid(save_workflow = TRUE,
+                        save_pred = TRUE,
+                        extract = extract_model) # grid for tuning
+
+
+#10 fold cross val
+cvFolds.im <- aouim_train %>% vfold_cv(10)
+
+# build recipe
+aouim.rec = recipe(R_median ~., data = aouim_train) %>% 
+  step_normalize(all_predictors()) %>% 
+  step_zv(all_predictors()) %>% 
+  step_corr(all_numeric_predictors(), threshold = .8)
+  
+
+# specify BRT model
+tune_spec = 
+  boost_tree(trees =  1000,
+             tree_depth = tune(),
+             learn_rate = tune(),
+             min_n = tune(),
+             mtry = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("xgboost", counts = FALSE)
+
+
+# set workflow
+
+aouim_wf <- workflow() %>%
+  add_recipe(aouim.rec) %>% 
+  add_model(tune_spec)
+
+
+# use CV to evaluate the model with different hyperparameters
+set.seed(429)
+aouim_tune<-  aouim_wf %>% 
+  tune_grid(resamples = cvFolds.im,
+            metrics = mset,
+            control = control,
+            grid = crossing( 
+                    tree_depth = c(6, 10),
+                    learn_rate = c(0.001, 0.005, 0.025),
+                    min_n = c(10, 15, 20 ),
+                    mtry = c(0.5)))
+saveRDS(aouim_tune, "aouim_tune.RDS")
+
+```
+
+
+```{r}
+set.seed(429)
+aouim_fit <- aouim_wf %>% 
+  finalize_workflow(select_best(aouim_tune)) %>% 
+  fit(aouim_train)
+saveRDS(aouim_fit, "aouim_fit.RDS")
+
+```
+
+```{r}
+set.seed(429)
+aouim_fit %>%
+  augment(aouim_test, type.predict = "response") %>% 
+  rmse(R_median, .pred)
+
+
+keep_pred <- control_resamples(save_pred = TRUE, save_workflow = TRUE)
+
+set.seed(429)
+aouim_res <- 
+  aouim_fit%>%  
+  fit_resamples(resamples = cvFolds.im, control = keep_pred)
+
+
+#resample test vs. train to evaluate model performance
+cvFolds.imt <- aouim_test %>% vfold_cv(10)
+aouim_fittt <- aouim_wf %>% 
+  finalize_workflow(select_best(aouim_tune)) %>% 
+  fit(aouim_test)
+
+aouim.ttres <-  aouim_fittt %>% fit_resamples(resamples = cvFolds.imt, control = keep_pred)
+
+aouim.ttres %>%  collect_metrics() # testing
+aouim_res %>%  collect_metrics(summarize = TRUE)# training
+
+saveRDS(aouim.ttres, "aouim_test_accuracy.RDS")
+saveRDS(aouim_res, "aouim_training_accuracy.RDS")
+
+aouim_tune %>% 
+  collect_metrics() %>% 
+  arrange(desc(mean))
+
+
+aouim_tune %>% show_best("rmse")
+
+
+```
+
+variable importance?
+```{r}
+importances.im <- xgboost::xgb.importance(model = extract_fit_engine(aouim_fit))
+importances.im
+importances.im %>%
+  mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+  dplyr::slice_max(Gain, n = 10) %>% 
+  ggplot(aes(Gain, Feature, fill = Feature)) +
+  geom_col() + scale_fill_viridis_d()+ theme_bw()  +
+  theme(legend.position="none") + 
+  labs(title = "Median Burn Severity within AOU", y = "Predictor") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+saveRDS(importances.im,"aouim_varImp_v0.RDS")
+
+ggsave("aouim_relimp_v3.png")
+
+```
+
+
+
+
+
+ *Lets develop a model for median burn severity outside the AOU*
+
+**_We will use the same process described above_**
+
+```{r, cache = TRUE}
+aouom_train = readRDS("../Moisture_AvailabilityxBurn_Severity//aouo.train.m.rds")
+aouom_test = readRDS("../Moisture_AvailabilityxBurn_Severity//aouo.test.m.rds")
+#set up defaults
+mset <- metric_set(rmse) # metric is accuracy
+control <- control_grid(save_workflow = TRUE,
+                        save_pred = TRUE,
+                        extract = extract_model) # grid for tuning
+#10 fold cross val
+cvFolds.om <- aouom_train %>% vfold_cv(10)
+
+# build recipe
+aouom.rec = recipe(RBR_median ~., data = aouom_train) %>% 
+step_normalize(all_predictors()) %>% 
+  step_zv(all_predictors()) %>% 
+  step_corr(all_numeric_predictors(), threshold = .8)
+
+# specify BRT model
+tune_spec = 
+  boost_tree(trees =  1000,
+             tree_depth = tune(),
+             learn_rate = tune(),
+             min_n = tune(),
+             mtry = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("xgboost", counts = FALSE)
+
+
+# set workflow
+
+aouom_wf <- workflow() %>%
+  add_recipe(aouom.rec) %>% 
+  add_model(tune_spec)
+
+
+# use CV to evaluate the model with different hyperparameters
+aouom_tune<-  aouom_wf %>% 
+  tune_grid(resamples = cvFolds.om,
+            metrics = mset,
+            control = control,
+            grid = crossing(
+                    tree_depth = c(6,4,3, 5),
+                    learn_rate = c(0.001,0.005, 0.01),
+                    min_n = c(10, 15, 20),
+                    mtry = c(0.5, 0.65, 0.8)))
+
+```
+
+Visualize results
+```{r}
+#visualize the results
+aouom_tune %>%  collect_metrics() %>% 
+  mutate(tree_depth = factor(tree_depth)) %>%
+  ggplot(aes(learn_rate, mean, color = tree_depth)) +
+  geom_line(size = 1.5, alpha = 0.6) +
+  geom_point(size = 2) +
+  facet_wrap(~ .metric, scales = "free", nrow = 2) +
+  scale_x_log10(labels = scales::label_number()) +
+  scale_color_viridis_d(option = "plasma", begin = .9, end = 0)
+
+autoplot(aouom_tune) + theme_light()
+```
+
+Collect and explore metrics
+```{r}
+aouom_tune %>% 
+  collect_metrics() %>% 
+  arrange(desc(mean))
+
+```
+
+What is the best model?
+```{r}
+aouom_tune %>% show_best("rmse")
+```
+
+```{r}
+set.seed(429)
+aouom_fit <- aouom_wf %>% 
+  finalize_workflow(select_best(aouom_tune)) %>% 
+  fit(aouom_train)
+
+```
+
+
+```{r}
+
+set.seed(429)
+
+aouom_fit %>%
+  augment(aouom_test, type.predict = "response") %>% 
+  rmse(RBR_median, .pred)
+
+```
+
+```{r}
+estimate_perf = function(model, dat){
+  # Capture the names of the `model` and `dat` objects
+  cl <- match.call()
+  obj_name <- as.character(cl$model)
+  data_name <- as.character(cl$dat)
+  data_name <- gsub("aouom_", "", data_name)
+  
+  # Estimate these metrics:
+  reg_metrics <- metric_set(rmse, rsq)
+  
+  model %>%
+    predict(dat) %>%
+    bind_cols(dat %>% select(RBR_median)) %>%
+    reg_metrics(RBR_median, .pred) %>%
+    select(-.estimator) %>%
+    mutate(object = obj_name, data = data_name)
+}
+
+```
+
+
+```{r}
+estimate_perf(aouom_fit, aouom_train)
+estimate_perf(aouom_fit, aouom_test)
+
+```
+
+```{r}
+keep_pred <- control_resamples(save_pred = TRUE, save_workflow = TRUE)
+```
+
+```{r}
+set.seed(429)
+aouom_res <- 
+  aouom_fit%>%  
+  fit_resamples(resamples = cvFolds.om, control = keep_pred)
+
+```
+
+```{r}
+collect_metrics(aouom_res)
+```
+
+
+
+
+```{r}
+#resample test vs. train to evaluate model performance
+set.seed(429)
+cvFolds.omt <- aouom_test %>% vfold_cv(10)
+aouom_fittt <- aouom_wf %>% 
+  finalize_workflow(select_best(aouom_tune)) %>% 
+  fit(aouom_test)
+aouom.ttres <-  aouom_fittt %>% fit_resamples(resamples = cvFolds.omt, control = keep_pred)
+aouom.ttres %>%  collect_metrics()#testing
+aouom_res %>%  collect_metrics(summarize = TRUE) #training (overfit)
+saveRDS(aouom_res, "aouom_train_perf_v1.RDS")
+saveRDS(aouom.ttres, "aouom_test_perf_v1.RDS")
+```
+
+
+variable importance?
+```{r}
+imp.om <- xgboost::xgb.importance(model = extract_fit_engine(aouom_fit))
+imp.om
+imp.om %>%
+  mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+  dplyr::slice_max(Gain, n = 10) %>% 
+  ggplot(aes(Gain, Feature, fill = Feature)) +
+  geom_col() + scale_fill_viridis_d()+ theme_bw()  +
+  theme(legend.position="none") + 
+  labs(title = "Median Burn Severity outside AOU", y = "Predictor") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+saveRDS(imp.om, "aouom_varImp_v0.RDS")
+
+ggsave("aouom_relimp_v2.png")
+```
+
+
+
+
+

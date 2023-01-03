@@ -9,11 +9,11 @@ The analyses were carried out with R version 4.1.3 and require the installation 
 
 ## The following packages are required to run the scripts:
 
--tidyverse
--tidymodels
--caret
--ggplot
--gbm
+- tidyverse
+- tidymodels
+- caret
+- ggplot
+- gbm
 
 Below are instructions to load them all:
 

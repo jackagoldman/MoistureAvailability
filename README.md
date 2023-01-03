@@ -1,4 +1,4 @@
-# MoistureAvailability
+# Effects of Moisture Availability on Wildfire Burn Severity
 
 This repository includes the data and R scripts to reproduce analyses and figures found in the article  _Moisture availability at short timescales influences wildfire burn severity in the boreal forest_ 
 

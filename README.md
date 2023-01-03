@@ -1,6 +1,6 @@
 # MoistureAvailability
 
-This repository includes the data and R scripts to reproduce analyses and figures found in the article _ _Moisture availability at short timescales influences wildfire burn severity in the boreal forest_ _
+This repository includes the data and R scripts to reproduce analyses and figures found in the article  _Moisture availability at short timescales influences wildfire burn severity in the boreal forest_ 
 
 ## Installation
 

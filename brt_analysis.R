@@ -9,6 +9,7 @@ library(tidyverse)
 library(ggplot2)
 library(tidymodels)
 library(readr)
+library(gridExtra)
 
 
 # Data preparation ---------------------
@@ -233,3 +234,102 @@ medtest_res <-  medtest_fit %>% fit_resamples(resamples = cvFolds_medtest, contr
 
 medtest_res %>%  collect_metrics() # testing
 med_res %>%  collect_metrics(summarize = TRUE)# training
+
+
+# model performance -----------------
+
+# median
+med_tib_training = med_res %>%  collect_metrics(summarize = FALSE)  
+med_tib_training = med_tib_training %>%  mutate(dataset = c("training", "training","training", "training", "training", "training", "training", "training", "training", "training",
+                                                    "training", "training","training", "training","training", "training","training", "training","training", "training"))
+med_tib_test = medtest_res %>%  collect_metrics(summarize = FALSE)
+med_tib_test = med_tib_test %>%  mutate(dataset = c("testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing",
+                                            "testing", "testing", "testing", "testing", "testing", "testing"))
+
+xlabels = c("Testing", "Training")
+perf_tib_med = med_tib_training %>%  full_join(med_tib_test)  %>% 
+  pivot_wider( names_from = ".metric",
+               values_from = ".estimate") 
+perf_plotmed_rmse = perf_tib_med %>%  
+  ggplot(aes(x = dataset, y = rmse, fill = dataset)) +
+  geom_boxplot(fill = "darkgrey", alpha=0.7) +
+  stat_summary(fun=mean, geom="point", shape=20, size=8, color="black", fill="black") +
+  theme(legend.position="none") +
+  theme_bw() + 
+  theme(legend.position="none") +
+  labs(title = "Median Burn Severity", y= "RMSE") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_discrete(labels = xlabels)+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size =15))
+
+
+perf_plotmed_rsq = perf_tib_med %>%  
+  ggplot(aes(x = dataset, y = rsq, fill = dataset)) +
+  geom_boxplot(fill= "darkgrey", alpha=0.7) +
+  stat_summary(fun=mean, geom="point", shape=20, size=8, color="black", fill="black") +
+  theme(legend.position="none") + 
+  theme_bw() + 
+  theme(legend.position="none") +
+  labs(title = "Median Burn Severity",  y= "R-squared") +
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(axis.title.x = element_blank()) +
+  scale_x_discrete(labels = xlabels)+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size =15)) 
+
+
+# Extreme
+ext_tib_train = ext_res %>%  collect_metrics(summarize = FALSE)  
+ext_tib_train = ext_tib_train %>%  mutate(dataset = c("training", "training","training", "training", "training", "training", "training", "training", "training", "training",
+                                          "training", "training","training", "training","training", "training","training", "training","training", "training"))
+ext_tib_test = exttest_res %>%  collect_metrics(summarize = FALSE)
+ext_tib_test = ext_tib_test %>%  mutate(dataset = c("testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing",
+                                        "testing", "testing", "testing", "testing", "testing", "testing"))
+
+xlabels = c("Testing", "Training")
+perf_tib_ext = ext_tib_train %>%  full_join(ext_tib_test)  %>% 
+  pivot_wider( names_from = ".metric",
+               values_from = ".estimate") 
+plot_perfext_rmse = perf_tib_ext %>%  
+  ggplot(aes(x = dataset, y = rmse, fill = dataset)) +
+  geom_boxplot(fill = "darkgrey", alpha=0.7) +
+  stat_summary(fun=mean, geom="point", shape=20, size=8, color="black", fill="black") +
+  theme(legend.position="none") +
+  theme_bw() + 
+  theme(legend.position="none") +
+  labs(title = "Extreme Burn Severity", y= "RMSE") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_discrete(labels = xlabels)+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size =15))
+
+
+plot_perfext_rsq= perf_tib_ext %>% 
+  ggplot(aes(x = dataset, y = rsq, fill = dataset)) +
+  geom_boxplot(fill= "darkgrey", alpha=0.7) +
+  stat_summary(fun=mean, geom="point", shape=20, size=8, color="black", fill="black") +
+  theme(legend.position="none") + 
+  theme_bw() + 
+  theme(legend.position="none") +
+  labs(title = "Extreme Burn Severity",  y= "R-squared") +
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(axis.title.x = element_blank()) +
+  scale_x_discrete(labels = xlabels)+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size =15)) 
+
+# arrange plots in a grid
+perf_plot = ggarrange(perf_plotm_rmse, perf_plotmed_rsq, 
+                      plot_perfext_rmse, plot_perfext_rsq, 
+                      labels = c("A", "B", "C", "D"),
+                      ncol = 2, nrow = 2, widths = c(1,1),
+                      common.legend = TRUE, legend="bottom")
+
+# add title
+annotate_figure(perf_plot, top = text_grob("Model Validation and Prediction Accuracy", 
+                                           color = "Black", face = "bold", size = 14))

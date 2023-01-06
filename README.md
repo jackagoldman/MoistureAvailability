@@ -11,13 +11,21 @@ The analyses were carried out with R version 4.1.3 and require the installation 
 - tidyverse
 - tidymodels
 - caret
-- ggplot
+- ggplot2
 - gbm
+- gridExtra
+- lubridate
+- EnvStats
+- ggpubr
+- ggpattern
+- viridis
+- DALExtra
 
 Below are instructions to load them all:
 
 ```
-install.packages(c("tidyverse", "tidymodels", "caret", "ggplot", "gbm"))
+install.packages(c("tidyverse", "tidymodels", "caret", "ggplot", "gbm", "gridExtra", 
+                 "lubridate", "EnvStats", "ggpubr", "ggpattern", "viridis", "DALExtra"))
 ```
 
 ## Details

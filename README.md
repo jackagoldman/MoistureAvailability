@@ -25,6 +25,6 @@ install.packages(c("tidyverse", "tidymodels", "caret", "ggplot", "gbm"))
 To reproduce all the analyses run this code:
 
 ```
-source("scripts/NW_analysis..")
+source("scripts/brt_analysis.R")
 ```
 

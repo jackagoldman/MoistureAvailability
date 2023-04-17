@@ -135,10 +135,13 @@ collect_metrics(ext_res)
 
 
 #resample test vs. train to evaluate model performance
+set.seed(429)
 cvFolds_exttest <- ext_test %>% vfold_cv(10)
+set.seed(429)
 exttest_fit <- ext_wf %>% 
   finalize_workflow(select_best(ext_tune)) %>% 
   fit(ext_test)
+set.seed(429)
 exttest_res <-  exttest_fit %>% fit_resamples(resamples = cvFolds_exttest, control = keep_pred)
 exttest_res %>%  collect_metrics() # testing
 ext_res %>%  collect_metrics(summarize = TRUE) # training
@@ -227,11 +230,13 @@ med_res <-
 
 
 #resample test vs. train to evaluate model performance
+set.seed(429)
 cvFolds_medtest <- med_test %>% vfold_cv(10)
+set.seed(429)
 medtest_fit <- med_wf %>% 
   finalize_workflow(select_best(med_tune)) %>% 
   fit(med_test)
-
+set.seed(429)
 medtest_res <-  medtest_fit %>% fit_resamples(resamples = cvFolds_medtest, control = keep_pred)
 
 medtest_res %>%  collect_metrics() # testing
@@ -941,7 +946,7 @@ plot_perfext_rsq= perf_tib_ext %>%
         plot.title = element_text(size =15)) 
 
 # arrange plots in a grid
-perf_plot = ggarrange(perf_plotm_rmse, perf_plotmed_rsq, 
+perf_plot = ggarrange(perf_plotmed_rmse, perf_plotmed_rsq, 
                       plot_perfext_rmse, plot_perfext_rsq, 
                       labels = c("A", "B", "C", "D"),
                       ncol = 2, nrow = 2, widths = c(1,1),

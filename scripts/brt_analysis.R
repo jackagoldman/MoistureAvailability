@@ -237,7 +237,8 @@ medtest_fit <- med_wf %>%
   finalize_workflow(select_best(med_tune)) %>% 
   fit(med_test)
 set.seed(429)
-medtest_res <-  medtest_fit %>% fit_resamples(resamples = cvFolds_medtest, control = keep_pred)
+medtest_res <-  medtest_fit %>% fit_resamples(resamples = cvFolds_medtest, 
+                                              control = keep_pred)
 
 medtest_res %>%  collect_metrics() # testing
 med_res %>%  collect_metrics(summarize = TRUE)# training
@@ -443,14 +444,16 @@ rel.per.imall  = med_imp %>%
   group_by(Temporal_Dynamics) %>% 
   summarise(total_inf = sum(Gain)) %>% 
   ggplot(aes(y= total_inf, x = Temporal_Dynamics)) +
-  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+  geom_bar(stat = "identity", fill = c("darkgrey", "black"), colour = "black", alpha = 0.7,
            width = 0.6)+
   scale_y_continuous(labels = scales::percent) + 
   theme_bw() + 
   labs(title ="Median Burn Severity", 
-       x ="Temporal Dynamics", 
-       y ="Relative Influence (%)") +
-  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+       x ="Temporal Lag", 
+       y ="Relative Importance (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 20),
+        axis.title = element_text(size = 15),
+        axis.text = element_text(size = 10))+ 
   scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
   theme(plot.margin = margin(2,2,2,2, "mm"))
 
@@ -474,14 +477,16 @@ rel.per.iqall= ext_imp %>%
   group_by(Temporal_Dynamics) %>% 
   summarise(total_inf = sum(Gain)) %>% 
   ggplot(aes(y= total_inf, x = Temporal_Dynamics)) +
-  geom_bar(stat = "identity", fill = "darkgrey", colour = "black", alpha = 0.7,
+  geom_bar(stat = "identity", fill = c("darkgrey", "black"), colour = "black", alpha = 0.7,
            width = 0.6)+
   scale_y_continuous(labels = scales::percent) + 
   theme_bw() +  
   labs(title ="Extreme Burn Severity", 
-       x ="Temporal Dynamics", 
-       y ="Relative Influence (%)") +
-  theme(plot.title = element_text(hjust = 0.5, size = 10))+ 
+       x ="Temporal Lag", 
+       y ="Relative Importance (%)") +
+  theme(plot.title = element_text(hjust = 0.5, size = 20),
+        axis.title = element_text(size = 15),
+        axis.text = element_text(size = 10))+ 
   scale_x_discrete(expand = expansion(add = c(0.5, 0.5)))+
   theme(plot.margin = margin(2,2,2,2, "mm"))
 

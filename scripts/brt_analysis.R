@@ -18,7 +18,21 @@ library(readr)
 
 ### DATA ###
 
-data_tlm <- read_csv2("data/TimeLagMoisture_data.csv")
+#data_tlm <- read_csv2("data/TimeLagMoisture_data.csv")
+
+#climate data
+data_tlm <- read_csv2("data/temporal-lag-moisture-id.csv")
+
+#covariates
+covariates <- read_csv2("data/nwo-managedarea-covariates.csv")
+
+#select covariates of interest
+covariates <- select(covariates, c("raster_id", "per_fc", "yearf"))
+
+#join covariates to climate data and remove id
+data_tlm <- data_tlm %>% 
+  left_join(covariates, by = "raster_id") %>% 
+  select(-c(2))
 
 # Remove first column
 data_tlm_clean <- data_tlm %>%  
@@ -96,6 +110,7 @@ ext_wf <- workflow() %>%
 
 #Use 10-fold cross-validation to evaluate the model with different hyperparameters
 set.seed(429) #set seed for reproducibility
+
 
 ext_tune<-  ext_wf %>% 
   tune_grid(resample = ext_folds,

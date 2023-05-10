@@ -1,0 +1,126 @@
+---
+title: "eccc-clim-data"
+author: "Jack A Goldman"
+date: "2023-05-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "~/Work/PhD/MoistureAvailability/")
+```
+
+```{r}
+library(tidyverse)
+library(feather)
+library(readr)
+
+```
+
+get nwo station ids
+```{r}
+stations.ids <- read_csv("~/Desktop/OneDrive - University of Toronto/all_daily/nwo-climate-station-id-ecc-80-2020.csv")
+
+```
+
+read in data that I need
+```{r}
+file_list <- list.files(path = "~/Google Drive/My Drive/hourly_feather/")
+
+#get list of station ids
+s.id.list <- as.list(stations.ids$station_id)
+#coerce to character
+s.id.list <- as.character(s.id.list)
+
+#filter files list by station ids list
+hourly.list <- s.id.list[(s.id.list%in% file_list)]
+
+
+#create year dataframe
+year.list <- list(1980:2020)
+df_year <- as.data.frame(year.list)
+colnames(df_year) <- "years"
+df_year <- df_year %>%
+  mutate(ext = rep("P1H.feather")) %>% 
+  unite("years", years:ext)
+df_year <- as.list(df_year)
+df_year <- as.character(df_year$years)
+
+
+#loop through hourly list, if file list matches a station id, go into the file list and read in 
+
+l_files <- list()
+df <- NULL
+for (i in hourly.list){
+  folder <- ("~/Google Drive/My Drive/hourly_feather/")
+  k = paste0(i,"/")
+  pathIn <- paste0(folder,k)
+  files_list <- list.files(pathIn)
+    for(j in 1:length(files_list)){
+      file <- arrow::read_feather(paste0(pathIn, files_list[j]))
+      file13 <- dplyr::filter(file, Time == "13:00")
+      l_files[[j]] <- file13
+    }
+  df[[i]] <- do.call("rbind", l_files)
+}
+
+# create dataframe
+ df <- do.call("rbind",df)
+
+#check for 50 unqiue ids
+ unique(df$`Climate ID`)
+ 
+```
+Clean data
+```{r}
+data.eccc.hourly <- df %>% 
+  filter(Year >= 1984) %>%  
+  select(c(1:10,18, 14))
+
+df.eccc.hourly <- data.eccc.hourly %>% drop_na()
+
+#clean column names
+df.eccc.hourly <- df.eccc.hourly %>% 
+  rename(long = 1, lat =2, station_name = 3 , 
+         climate_id = 4, date = `Date/Time`,
+         temp = `Temp (Â°C)`, rh = `Rel Hum (%)`, wind = `Wind Spd (km/h)`)
+
+write.csv(df.eccc.hourly, "data/eccc-hourly-data.csv")
+
+```
+
+
+get precip data from daily
+```{r}
+#match climate id to station id
+df.clim.id <- unique(df.eccc.hourly$climate_id)
+df.clim.id <- as.data.frame(df.clim.id) 
+colnames(df.clim.id) <- "climate_id"
+
+#get ids to filter by
+ids.to.filter <- semi_join(stations.ids, df.clim.id, by = "climate_id")
+
+ids.list <- as.list(ids.to.filter$station_id)
+ids.list <- as.character(ids.list)
+
+
+l_files <- list()
+df <- NULL
+file_list <- list.files(path = "~/Desktop/OneDrive - University of Toronto/all_daily/all_daily/", pattern = "*.csv")
+
+for (i in 1:length(ids.list)){
+  csv <- read.csv(paste0(pathIn, file_list[i]), header = FALSE)
+      l_files[[i]] <- csv
+}
+
+df <- do.call('rbind', l_files)
+
+df <- df %>% dplyr::select(c(V3, V9, V33, V12, V13, V14, V15))
+
+df.eccc.daily <- df %>% 
+  rename(station_name = V3, climate_id = V9, date = V12, year = V13, month = V14, day = V15, total_precip = V33 )
+
+df.eccc.daily <- df.eccc.daily[-1,]
+
+```
+

@@ -87,11 +87,18 @@ df.eccc.hourly <- df.eccc.hourly %>%
 
 write.csv(df.eccc.hourly, "data/eccc-hourly-data.csv")
 
+#make clean date column
+df.eccc.hourly<-  unite(df.eccc.hourly, date,  Year:Day, sep = "-")
+df.eccc.hourly <- df.eccc.hourly %>% 
+  mutate(date = ymd(date))
+
 ```
+
 
 
 get precip data from daily
 ```{r}
+df.eccc.hourly <- read.csv("data/eccc-hourly-data.csv")
 #match climate id to station id
 df.clim.id <- unique(df.eccc.hourly$climate_id)
 df.clim.id <- as.data.frame(df.clim.id) 
@@ -103,24 +110,95 @@ ids.to.filter <- semi_join(stations.ids, df.clim.id, by = "climate_id")
 ids.list <- as.list(ids.to.filter$station_id)
 ids.list <- as.character(ids.list)
 
+ids.list
 
-l_files <- list()
-df <- NULL
+
+f_list <- list()
+
 file_list <- list.files(path = "~/Desktop/OneDrive - University of Toronto/all_daily/all_daily/", pattern = "*.csv")
+data_list <- vector("list", "length" = length(file_list))
+pathIn = "~/Desktop/OneDrive - University of Toronto/all_daily/all_daily/"
 
-for (i in 1:length(ids.list)){
-  csv <- read.csv(paste0(pathIn, file_list[i]), header = FALSE)
-      l_files[[i]] <- csv
+for (i in ids.list){ # or s.id.list
+     filname <- i
+    files <- paste0(filname,".csv")
+    df <- readr::read_csv(paste0(pathIn, files), col_names = TRUE)
+    f_list[[i]] <- df
 }
 
-df <- do.call('rbind', l_files)
+df <- do.call('rbind', f_list)
 
-df <- df %>% dplyr::select(c(V3, V9, V33, V12, V13, V14, V15))
+df
 
-df.eccc.daily <- df %>% 
-  rename(station_name = V3, climate_id = V9, date = V12, year = V13, month = V14, day = V15, total_precip = V33 )
+df1 <- semi_join(df, ids.to.filter, by = "station_id")
+unique(df1$station_id)
 
-df.eccc.daily <- df.eccc.daily[-1,]
+df.eccc.daily <- df1 %>% 
+  select(c(station_id, climate_id, date, month, year, day, lat, lon, elev, total_precip, max_temp))
+
+df.eccc.daily <- df.eccc.daily %>% 
+  filter(year >= 1984)
+
+data.eccc.weath <- df.eccc.daily %>% left_join(df.eccc.hourly, by = c("climate_id", "date"))
+
+write.csv(data.eccc.weath, "data/data-eccc-weath.csv")
+
+data.eccc.weath <- data.eccc.weath %>% mutate_at(c('total_precip'), ~replace_na(.,0.0))
+```
+
+
+explore station 
+```{r}
+unique(data.eccc.weath$station_id)
+
+# for each station year and month calculate the mean max temp
+max.temp.stn.ym <- data.eccc.weath %>% 
+  group_by(station_id, month, year, lat.x, long) %>% 
+  summarise(mean_max_temp = mean(max_temp))
+
+#remove rows with NA max temp values
+
+max.temp.stn.ym.1 <- max.temp.stn.ym %>% drop_na(mean_max_temp)
+
+#day-light adjustment factors from Lawson and Armitage 2008
+lf <- data.frame(month = as.numeric(c("01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12")),
+                 lf = as.numeric(c("6.5", "7.5", "9.0", "12.8", "13.9", "13.9", "12.4", "10.9", "9.4", "8.0", "7.0", "6.0")))
+
+
+#assign day-light adjustment factors to each month in the dataset
+max.temp.stn.ym.1 <- max.temp.stn.ym.1 %>% 
+  mutate(lf = case_when(month == "01" ~ "6.5",
+                        month == "02" ~ "7.5",
+                        month == "03" ~ "9.0",
+                        month == "04" ~ "12.8",
+                        month == "05" ~ "13.9",
+                        month == "06" ~ "13.9",
+                        month == "07" ~ "12.4",
+                        month == "08" ~ "10.9",
+                        month == "09" ~ "9.4",
+                        month == "10" ~ "8.0",
+                        month == "11" ~ "7.0",
+                        month == "12" ~ "6.0"))
+
+# get days in each month
+max.temp.stn.ym.1 <-max.temp.stn.ym.1 %>% 
+  relocate(month, .after = year) %>% 
+  mutate(month = as.character(month)) %>% 
+  unite("date", year:month, sep = "-", remove = FALSE) %>% #create date column
+  mutate(date = paste0(date, "-01"), # add arbitrary day to the date formate 01
+         date = ymd(date),
+         days = days_in_month(date)) 
+#calculate Em or potential evapotranspiration
+#em = days[0.36(max_temp)+lf] 
+# if tmax value is negative then it should be set to zero
+max.temp.stn.ym.1 <- max.temp.stn.ym.1 %>% 
+  mutate(lf = as.numeric(lf),
+         adj_mean_max_temp = case_when(mean_max_temp < "0" ~ as.numeric("0"),
+                                       TRUE ~ mean_max_temp),
+    Em = (days*((0.36*adj_mean_max_temp)+lf)))
+
+
+
 
 ```
 

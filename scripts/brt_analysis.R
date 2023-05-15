@@ -43,7 +43,7 @@ names(data_tlm) <- data_tlm %>% names () %>%  str_replace_all(.,"^X", "")
 
 # Remove first column
 data_tlm_clean <- data_tlm %>%  
-  select(-c(1))
+  select(-c(1:2))
 
 #split data set into Extreme only and Median only
 

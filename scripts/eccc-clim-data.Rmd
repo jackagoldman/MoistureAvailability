@@ -156,6 +156,9 @@ max.temp.stn.ym <- data.eccc.weath %>%
   group_by(station_id, month, year, lat.x, long) %>% 
   summarise(mean_max_temp = mean(max_temp))
 
+#save raw mean max temp data
+write.csv(max.temp.stn.ym,"data/eccc-mean-max-temp-per-stn-ym.csv")
+
 #remove rows with NA max temp values
 
 max.temp.stn.ym.1 <- max.temp.stn.ym %>% drop_na(mean_max_temp)
@@ -197,6 +200,13 @@ max.temp.stn.ym.1 <- max.temp.stn.ym.1 %>%
                                        TRUE ~ mean_max_temp),
     Em = (days*((0.36*adj_mean_max_temp)+lf)))
 
+# for each station year and month calculate the total precip
+total.precip.stn.ym <- data.eccc.weath %>% 
+  group_by(station_id, month, year, lat.x, long) %>% 
+  summarise(tot_precip = sum(total_precip))
+
+#save raw total precip data
+write.csv(total.precip.stn.ym,"data/eccc-total-precip-per-stn-ym.csv")
 
 
 

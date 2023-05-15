@@ -18,21 +18,28 @@ library(readr)
 
 ### DATA ###
 
-#data_tlm <- read_csv2("data/TimeLagMoisture_data.csv")
+data_tlm <- read.csv("data/bs-moisture-lags-data-v0.csv")
+names(data_tlm) <- data_tlm %>% names () %>%  str_replace_all(.,"^X", "")
+#
+#yof <- bs %>% select(c(raster_id, Fire_Year, julday, FIRE_START))
+#yof = yof %>%  mutate(month = lubridate::month(FIRE_START)) %>% select(c(raster_id, month))
 
-#climate data
-data_tlm <- read_csv2("data/temporal-lag-moisture-id.csv")
+#data_tlm <- data_tlm %>% 
+  #left_join(yof, by = "raster_id") 
+
+#data_tlm <- data_tlm %>% filter(month >= "5")
 
 #covariates
-covariates <- read_csv2("data/nwo-managedarea-covariates.csv")
+#covariates <- read_csv2("data/nwo-managedarea-covariates.csv")
 
 #select covariates of interest
-covariates <- select(covariates, c("raster_id", "per_fc", "yearf"))
+#covariates <- select(covariates, c("raster_id"))#, "per_fc", "yearf"))
 
 #join covariates to climate data and remove id
-data_tlm <- data_tlm %>% 
-  left_join(covariates, by = "raster_id") %>% 
-  select(-c(2))
+#data_tlm <- data_tlm %>% 
+  #left_join
+#semi_join(covariates, by = "raster_id") #%>% 
+#  select(-c(2))
 
 # Remove first column
 data_tlm_clean <- data_tlm %>%  

@@ -1,0 +1,615 @@
+---
+title: "climateNA-lags-clean"
+author: "Jack A Goldman"
+date: "2023-05-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "~/Work/PhD/MoistureAvailability/")
+
+```
+
+load required packages
+```{r}
+
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(purrr)
+library(sf)
+
+```
+
+read in data
+```{r}
+monthly = read.csv("~/Google Drive/My Drive/OntBSdb/Climate/On_Fire_Elevation_1980-2020M.csv")
+bs  = read.csv2("~/Google Drive/My Drive/OntBSdb/Clean_Tables//OnShield_FIRE_BS_v1.csv")
+```
+
+get month and yof
+```{r}
+
+yof <- bs %>% select(c(raster_id, Fire_Year, julday, FIRE_START))
+yof = yof %>%  mutate(month = lubridate::month(FIRE_START))
+yof %>% group_by(month) %>% summarise(count = n ())
+
+yof = yof %>%  mutate(month = month + 12 )
+```
+
+Make data frame that looks at precipitation per month
+```{r}
+oldnames_b4 = c("RH01_b4", 
+                "RH02_b4",
+                "RH03_b4",
+                "RH04_b4",
+                "RH05_b4", "RH06_b4", "RH07_b4", "RH08_b4", "RH09_b4",
+                "RH10_b4", "RH11_b4", "RH12_b4")
+newnames_b4 = c(13:24)
+
+oldnames_fy = c("RH01_fy", 
+                "RH02_fy",
+                "RH03_fy",
+                "RH04_fy",
+                "RH05_fy", "RH06_fy", "RH07_fy", "RH08_fy", "RH09_fy",
+                "RH10_fy", "RH11_fy", "RH12_fy")
+newnames_fy = c(1:12)
+
+oldnames_2b4 = c("RH01_2b4", 
+                 "RH02_2b4",
+                 "RH03_2b4",
+                 "RH04_2b4",
+                 "RH05_2b4", "RH06_2b4", "RH07_2b4", "RH08_2b4", "RH09_2b4",
+                 "RH10_2b4", "RH11_2b4", "RH12_2b4")
+newnames_2b4 = c(25:36)
+
+oldnames_3b4 = c("RH01_3b4", 
+                 "RH02_3b4",
+                 "RH03_3b4",
+                 "RH04_3b4",
+                 "RH05_3b4", "RH06_3b4", "RH07_3b4", "RH08_3b4", "RH09_3b4",
+                 "RH10_3b4", "RH11_3b4", "RH12_3b4")
+newnames_3b4 = c(37:48)
+
+oldnames_4b4 = c("RH01_4b4", 
+                 "RH02_4b4",
+                 "RH03_4b4",
+                 "RH04_4b4",
+                 "RH05_4b4", "RH06_4b4", "RH07_4b4", "RH08_4b4", "RH09_4b4",
+                 "RH10_4b4", "RH11_4b4", "RH12_4b4")
+newnames_4b4 = c(49:60)
+
+oldnames_5b4 = c("RH01_5b4", 
+                 "RH02_5b4",
+                 "RH03_5b4",
+                 "RH04_5b4",
+                 "RH05_5b4", "RH06_5b4", "RH07_5b4", "RH08_5b4", "RH09_5b4",
+                 "RH10_5b4", "RH11_5b4", "RH12_5b4")
+newnames_5b4 = c(61:72)
+
+oldnames_6b4 = c("RH01_6b4", 
+                 "RH02_6b4",
+                 "RH03_6b4",
+                 "RH04_6b4",
+                 "RH05_6b4", "RH06_6b4", "RH07_6b4", "RH08_6b4", "RH09_6b4",
+                 "RH10_6b4", "RH11_6b4", "RH12_6b4")
+newnames_6b4 = c(73:84)
+
+##
+y5_prior <- monthly %>% select(starts_with(c( "RH",  'Year', "ID1"))) %>% 
+  rename(raster_id = ID1) %>% left_join(yof) %>% 
+  relocate(raster_id, Fire_Year, .before = RH01) %>% 
+  mutate(gap1 =(Fire_Year -1),
+         gap2 = (Fire_Year - 2),
+         gap3 = (Fire_Year - 3),
+         gap4 = (Fire_Year - 4),
+         gap5 = (Fire_Year - 5),
+         gap6 = (Fire_Year - 6)) %>% # add a gap of 6 to get 6 years before fire 
+  filter(Year == gap1 | Year == Fire_Year | Year == gap2 
+         |Year == gap3 | Year == gap4 |Year ==gap5 | Year ==gap6) %>% 
+  mutate(temp = case_when(Year == Fire_Year ~ "fy",
+                          Year == (Fire_Year - 1) ~ "b4",
+                          Year == (Fire_Year - 2) ~ "2b4",
+                          Year == (Fire_Year - 3) ~ "3b4",
+                          Year ==(Fire_Year - 4) ~ "4b4",
+                          Year ==(Fire_Year - 5) ~ "5b4",
+                          Year ==(Fire_Year - 6) ~ "6b4")) %>% 
+  pivot_wider(id_cols = c("raster_id","Year", "Fire_Year"), names_from = temp, 
+              values_from = c(RH01:RH12)) %>% 
+  relocate(ends_with("b4"), .before = RH01_fy) %>% 
+  relocate(ends_with("2b4"), .before = RH01_b4)  %>% 
+  relocate(ends_with("3b4"), .before = RH01_2b4) %>% 
+  relocate(ends_with("4b4"), .before = RH01_3b4) %>% 
+  relocate(ends_with("5b4"), .before = RH01_4b4) %>% 
+  relocate(ends_with("6b4"), .before = RH01_5b4) %>% 
+  rename_with(~ as.character(newnames_b4) , all_of(oldnames_b4)) %>% 
+  rename_with(~ as.character(newnames_fy) , all_of(oldnames_fy)) %>% 
+  rename_with(~ as.character(newnames_2b4) , all_of(oldnames_2b4)) %>% 
+  rename_with(~ as.character(newnames_3b4) , all_of(oldnames_3b4)) %>% 
+  rename_with(~ as.character(newnames_4b4) , all_of(oldnames_4b4)) %>% 
+  rename_with(~ as.character(newnames_5b4) , all_of(oldnames_5b4))  %>% 
+  rename_with(~ as.character(newnames_6b4) , all_of(oldnames_6b4))
+  # for each raster i need to collect all rows that aren't NA.
+
+
+y5_prior1 = y5_prior %>%  
+  filter_at(vars(c(`1`:`12`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior2 = y5_prior %>% 
+  filter_at(vars(c(`13`:`24`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior3 = y5_prior %>%
+  filter_at(vars(c(`25`:`36`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior4 = y5_prior %>%
+  filter_at(vars(c(`37`:`48`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior5 = y5_prior %>%
+  filter_at(vars(c(`49`:`60`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior6 = y5_prior %>%
+  filter_at(vars(c(`61`:`72`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior7 = y5_prior %>%
+  filter_at(vars(c(`73`:`84`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+#y5_prior = rbind(y5_prior1, y5_prior2, y5_prior3, y5_prior4, y5_prior5, y5_prior6, y5_prior7)
+
+y5_prior11 = y5_prior1 %>% 
+  left_join(y5_prior2, by = "raster_id") %>%  
+  select(!c(Year.y, Fire_Year.y ))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior3, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior4, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior5, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior6, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior7, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+
+#flip months around so 
+
+y5_prior_flip <- y5_prior11 %>%
+  left_join(yof, by = "raster_id") %>% 
+  relocate(month, .before =`1`) %>% 
+  mutate(flip_month = case_when( # create a month column that corresponds to the flipped month, fire start month
+    month == 5 ~ "8",
+    month == 3 ~ "10",
+    month == 4 ~ "9",
+    month == 6 ~"7",
+    month == 7 ~ "6",
+    month == 8 ~ "5",
+    month == 9 ~ "4",
+    month == 10 ~"3",
+    month == 11 ~ "2")) %>% 
+  relocate(flip_month, .before = `1`) %>% 
+  rename(`1` = `12`,  # flip the months 
+         `2` = `11`, 
+         `3` = `10`,
+         `4` = `9`,
+         `5` = `8`,
+         `6` = `7`,
+         `7` = `6`,
+         `8` = `5`,
+         `9` = `4`,
+         `10` = `3`,
+         `11` = `2`,
+         `12` = `1`) %>% 
+  relocate(`12`, .after = `1`) %>% # relocate months column
+  relocate(`11`, .before = `12`) %>% 
+  relocate(`10`, .before = `11`) %>% 
+  relocate(`9`, .before = `10`) %>%
+  relocate(`8`, .before = `9`) %>% 
+  relocate(`7`, .before = `8`) %>% 
+  relocate(`6`, .before = `7`) %>% 
+    relocate(`5`, .before = `6`) %>% 
+    relocate(`4`, .before = `5`) %>% 
+    relocate(`3`, .before = `4`) %>% 
+    relocate(`2`, .before = `3`) %>% 
+    relocate(`1`, .before = `2`) 
+
+
+# get the required months for each fire start date
+
+
+names.new = as.character(c(1:61))
+#right now I am including the month of fire, I do not want that, I want the month before fire. therefore I need to take off 1 month 
+# if i would want to include fire month argument !c(1:10) would be 1:9 and names.new , c(10:70)
+
+y5_priormarch = select(filter(y5_prior_flip, flip_month == 10),!c(`1`:`10`)) %>%   
+  select(!c(67:82)) %>% rename_with(~names.new, c(`11`:`71`)) %>% select(-c(66))
+
+y5_priorapril = select(filter(y5_prior_flip, flip_month == 9),!c(`1`:`9`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`10`:`70`)) %>% select(-c(66:67))
+
+y5_priormay = select(filter(y5_prior_flip, flip_month == 8),!c(`1`:`8`))%>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`9`:`69`)) %>% select(-c(66:68))
+
+y5_priorjune = select(filter(y5_prior_flip, flip_month == 7),!c(`1`:`7`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`8`:`68`)) %>% select(-c(66:69))
+
+y5_priorjuly = select(filter(y5_prior_flip, flip_month == 6),!c(`1`:`6`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`7`:`67`)) %>% select(-c(66:70))
+
+y5_prioraug = select(filter(y5_prior_flip, flip_month == 5),!c(`1`:`5`))  %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`6`:`66`)) %>% select(-c(66:71))
+
+y5_priorsept = select(filter(y5_prior_flip, flip_month == 4),!c(`1`:`4`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`5`:`65`)) %>% select(-c(66:72))
+
+y5_prioroct = select(filter(y5_prior_flip, flip_month == 3),!c(`1`:`3`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`4`:`64`)) %>% select(-c(66:73))
+
+y5_priornov = select(filter(y5_prior_flip, flip_month == 2),!c(`1`:`2`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`3`:`63`)) %>% select(-c(66:74))
+
+y5_priorv0 = rbind(y5_priormarch, y5_priorapril, y5_priormay, y5_priorjune, y5_priorjuly, y5_prioraug,
+                   y5_priorsept, y5_prioroct, y5_priornov)
+
+
+
+# alter 1 to 60 to say Tmax_1 to Tmax_60
+y5_prior60 = y5_priorv0 %>%
+  rename_with( ~ paste("rh", colnames(y5_priorv0), sep = "_")) %>% 
+  select(!c(rh_Year.x, rh_month, rh_Fire_Year.x))
+
+rh_60months_prior <- y5_prior60 
+  rh_60months_prior <- rh_60months_prior %>% 
+    rename(raster_id = rh_raster_id)
+  #save it
+  write.csv(rh_60months_prior, "~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/climate-data//rh-5yr-lag-data.csv")
+```
+
+
+
+```{r}
+oldnames_b4 = c("CMI01_b4", 
+                "CMI02_b4",
+                "CMI03_b4",
+                "CMI04_b4",
+                "CMI05_b4", "CMI06_b4", "CMI07_b4", "CMI08_b4", "CMI09_b4",
+                "CMI10_b4", "CMI11_b4", "CMI12_b4")
+newnames_b4 = c(13:24)
+
+oldnames_fy = c("CMI01_fy", 
+                "CMI02_fy",
+                "CMI03_fy",
+                "CMI04_fy",
+                "CMI05_fy", "CMI06_fy", "CMI07_fy", "CMI08_fy", "CMI09_fy",
+                "CMI10_fy", "CMI11_fy", "CMI12_fy")
+newnames_fy = c(1:12)
+
+oldnames_2b4 = c("CMI01_2b4", 
+                 "CMI02_2b4",
+                 "CMI03_2b4",
+                 "CMI04_2b4",
+                 "CMI05_2b4", "CMI06_2b4", "CMI07_2b4", "CMI08_2b4", "CMI09_2b4",
+                 "CMI10_2b4", "CMI11_2b4", "CMI12_2b4")
+newnames_2b4 = c(25:36)
+
+oldnames_3b4 = c("CMI01_3b4", 
+                 "CMI02_3b4",
+                 "CMI03_3b4",
+                 "CMI04_3b4",
+                 "CMI05_3b4", "CMI06_3b4", "CMI07_3b4", "CMI08_3b4", "CMI09_3b4",
+                 "CMI10_3b4", "CMI11_3b4", "CMI12_3b4")
+newnames_3b4 = c(37:48)
+
+oldnames_4b4 = c("CMI01_4b4", 
+                 "CMI02_4b4",
+                 "CMI03_4b4",
+                 "CMI04_4b4",
+                 "CMI05_4b4", "CMI06_4b4", "CMI07_4b4", "CMI08_4b4", "CMI09_4b4",
+                 "CMI10_4b4", "CMI11_4b4", "CMI12_4b4")
+newnames_4b4 = c(49:60)
+
+oldnames_5b4 = c("CMI01_5b4", 
+                 "CMI02_5b4",
+                 "CMI03_5b4",
+                 "CMI04_5b4",
+                 "CMI05_5b4", "CMI06_5b4", "CMI07_5b4", "CMI08_5b4", "CMI09_5b4",
+                 "CMI10_5b4", "CMI11_5b4", "CMI12_5b4")
+newnames_5b4 = c(61:72)
+
+oldnames_6b4 = c("CMI01_6b4", 
+                 "CMI02_6b4",
+                 "CMI03_6b4",
+                 "CMI04_6b4",
+                 "CMI05_6b4", "CMI06_6b4", "CMI07_6b4", "CMI08_6b4", "CMI09_6b4",
+                 "CMI10_6b4", "CMI11_6b4", "CMI12_6b4")
+newnames_6b4 = c(73:84)
+
+##
+y5_prior <- monthly %>% select(starts_with(c( "CMI",  'Year', "ID1"))) %>% 
+  rename(raster_id = ID1) %>% left_join(yof) %>% 
+  relocate(raster_id, Fire_Year, .before = CMI01) %>% 
+  mutate(gap1 =(Fire_Year -1),
+         gap2 = (Fire_Year - 2),
+         gap3 = (Fire_Year - 3),
+         gap4 = (Fire_Year - 4),
+         gap5 = (Fire_Year - 5),
+         gap6 = (Fire_Year - 6)) %>% # add a gap of 6 to get 6 years before fire 
+  filter(Year == gap1 | Year == Fire_Year | Year == gap2 
+         |Year == gap3 | Year == gap4 |Year ==gap5 | Year ==gap6) %>% 
+  mutate(temp = case_when(Year == Fire_Year ~ "fy",
+                          Year == (Fire_Year - 1) ~ "b4",
+                          Year == (Fire_Year - 2) ~ "2b4",
+                          Year == (Fire_Year - 3) ~ "3b4",
+                          Year ==(Fire_Year - 4) ~ "4b4",
+                          Year ==(Fire_Year - 5) ~ "5b4",
+                          Year ==(Fire_Year - 6) ~ "6b4")) %>% 
+  pivot_wider(id_cols = c("raster_id","Year", "Fire_Year"), names_from = temp, 
+              values_from = c(CMI01:CMI12)) %>% 
+  relocate(ends_with("b4"), .before = CMI01_fy) %>% 
+  relocate(ends_with("2b4"), .before = CMI01_b4)  %>% 
+  relocate(ends_with("3b4"), .before = CMI01_2b4) %>% 
+  relocate(ends_with("4b4"), .before = CMI01_3b4) %>% 
+  relocate(ends_with("5b4"), .before = CMI01_4b4) %>% 
+  relocate(ends_with("6b4"), .before = CMI01_5b4) %>% 
+  rename_with(~ as.character(newnames_b4) , all_of(oldnames_b4)) %>% 
+  rename_with(~ as.character(newnames_fy) , all_of(oldnames_fy)) %>% 
+  rename_with(~ as.character(newnames_2b4) , all_of(oldnames_2b4)) %>% 
+  rename_with(~ as.character(newnames_3b4) , all_of(oldnames_3b4)) %>% 
+  rename_with(~ as.character(newnames_4b4) , all_of(oldnames_4b4)) %>% 
+  rename_with(~ as.character(newnames_5b4) , all_of(oldnames_5b4))  %>% 
+  rename_with(~ as.character(newnames_6b4) , all_of(oldnames_6b4))
+  # for each raster i need to collect all rows that aren't NA.
+
+
+y5_prior1 = y5_prior %>%  
+  filter_at(vars(c(`1`:`12`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior2 = y5_prior %>% 
+  filter_at(vars(c(`13`:`24`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior3 = y5_prior %>%
+  filter_at(vars(c(`25`:`36`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior4 = y5_prior %>%
+  filter_at(vars(c(`37`:`48`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior5 = y5_prior %>%
+  filter_at(vars(c(`49`:`60`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior6 = y5_prior %>%
+  filter_at(vars(c(`61`:`72`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior7 = y5_prior %>%
+  filter_at(vars(c(`73`:`84`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+#y5_prior = rbind(y5_prior1, y5_prior2, y5_prior3, y5_prior4, y5_prior5, y5_prior6, y5_prior7)
+
+y5_prior11 = y5_prior1 %>% 
+  left_join(y5_prior2, by = "raster_id") %>%  
+  select(!c(Year.y, Fire_Year.y ))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior3, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior4, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior5, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior6, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior7, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+
+#flip months around so 
+
+y5_prior_flip <- y5_prior11 %>%
+  left_join(yof, by = "raster_id") %>% 
+  relocate(month, .before =`1`) %>% 
+  mutate(flip_month = case_when( # create a month column that corresponds to the flipped month, fire start month
+    month == 5 ~ "8",
+    month == 3 ~ "10",
+    month == 4 ~ "9",
+    month == 6 ~"7",
+    month == 7 ~ "6",
+    month == 8 ~ "5",
+    month == 9 ~ "4",
+    month == 10 ~"3",
+    month == 11 ~ "2")) %>% 
+  relocate(flip_month, .before = `1`) %>% 
+  rename(`1` = `12`,  # flip the months 
+         `2` = `11`, 
+         `3` = `10`,
+         `4` = `9`,
+         `5` = `8`,
+         `6` = `7`,
+         `7` = `6`,
+         `8` = `5`,
+         `9` = `4`,
+         `10` = `3`,
+         `11` = `2`,
+         `12` = `1`) %>% 
+  relocate(`12`, .after = `1`) %>% # relocate months column
+  relocate(`11`, .before = `12`) %>% 
+  relocate(`10`, .before = `11`) %>% 
+  relocate(`9`, .before = `10`) %>%
+  relocate(`8`, .before = `9`) %>% 
+  relocate(`7`, .before = `8`) %>% 
+  relocate(`6`, .before = `7`) %>% 
+    relocate(`5`, .before = `6`) %>% 
+    relocate(`4`, .before = `5`) %>% 
+    relocate(`3`, .before = `4`) %>% 
+    relocate(`2`, .before = `3`) %>% 
+    relocate(`1`, .before = `2`) 
+
+
+# get the required months for each fire start date
+
+
+names.new = as.character(c(1:61))
+#right now I am including the month of fire, I do not want that, I want the month before fire. therefore I need to take off 1 month 
+# if i would want to include fire month argument !c(1:10) would be 1:9 and names.new , c(10:70)
+
+y5_priormarch = select(filter(y5_prior_flip, flip_month == 10),!c(`1`:`10`)) %>%   
+  select(!c(67:82)) %>% rename_with(~names.new, c(`11`:`71`)) %>% select(-c(66))
+
+y5_priorapril = select(filter(y5_prior_flip, flip_month == 9),!c(`1`:`9`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`10`:`70`)) %>% select(-c(66:67))
+
+y5_priormay = select(filter(y5_prior_flip, flip_month == 8),!c(`1`:`8`))%>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`9`:`69`)) %>% select(-c(66:68))
+
+y5_priorjune = select(filter(y5_prior_flip, flip_month == 7),!c(`1`:`7`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`8`:`68`)) %>% select(-c(66:69))
+
+y5_priorjuly = select(filter(y5_prior_flip, flip_month == 6),!c(`1`:`6`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`7`:`67`)) %>% select(-c(66:70))
+
+y5_prioraug = select(filter(y5_prior_flip, flip_month == 5),!c(`1`:`5`))  %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`6`:`66`)) %>% select(-c(66:71))
+
+y5_priorsept = select(filter(y5_prior_flip, flip_month == 4),!c(`1`:`4`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`5`:`65`)) %>% select(-c(66:72))
+
+y5_prioroct = select(filter(y5_prior_flip, flip_month == 3),!c(`1`:`3`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`4`:`64`)) %>% select(-c(66:73))
+
+y5_priornov = select(filter(y5_prior_flip, flip_month == 2),!c(`1`:`2`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`3`:`63`)) %>% select(-c(66:74))
+
+y5_priorv0 = rbind(y5_priormarch, y5_priorapril, y5_priormay, y5_priorjune, y5_priorjuly, y5_prioraug,
+                   y5_priorsept, y5_prioroct, y5_priornov)
+
+
+
+# alter 1 to 60 to say Tmax_1 to Tmax_60
+y5_prior60 = y5_priorv0 %>%
+  rename_with( ~ paste("cmi", colnames(y5_priorv0), sep = "_")) %>% 
+  select(!c(cmi_Year.x, cmi_month, cmi_Fire_Year.x))
+
+cmi_60months_prior <- y5_prior60 
+  cmi_60months_prior <- cmi_60months_prior %>% 
+    rename(raster_id = cmi_raster_id)
+  #save it
+  write.csv(cmi_60months_prior, "~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/climate-data//cmi-5yr-lag-data.csv")
+```
+
+calculate lags
+```{r}
+cmi <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/climate-data//cmi-5yr-lag-data.csv")
+rh <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/climate-data/rh-5yr-lag-data.csv")
+
+##### intraannual vs interannual data prep #####
+cmi_ii = cmi%>% rowwise() %>% mutate("1mC" = round(cmi_1, 2),
+                                      "2mC" = cmi_2,
+                                      "3mC" = cmi_3,
+                                      "4mC" = cmi_4,
+                                      "5mC" = cmi_5,
+                                      "6mC" = cmi_6,
+                                      "7mC" = cmi_7,
+                                      "8mC" = cmi_8,
+                                      "9mC" = cmi_9,
+                                      "10mC" = cmi_10,
+                                      "11mC" = cmi_11,
+                                      "12mC" = cmi_12, 
+                                      "3mCsum" = sum(cmi_1:cmi_3),
+                                      "6mCsum" = sum(cmi_1:cmi_6),
+                                      "9mCsum" = sum(cmi_1:cmi_9),
+                                      "1yC" = sum(cmi_13:cmi_24),
+                                      "2yC" = sum(cmi_25:cmi_36),
+                                      "3yC" = sum(cmi_37:cmi_48),
+                                      "0yC" = sum(cmi_1:cmi_12),
+                                      "4yC" = sum(cmi_49:cmi_60),
+                                      "2yCsum" = sum(cmi_13:cmi_36),
+                                      "3yCsum" = sum(cmi_13:cmi_48),
+                                      "4yCsum" = sum(cmi_13:cmi_60),
+                                      "5yCsum" = sum(cmi_1:cmi_60))
+
+
+rh_ii = rh %>% rowwise() %>% mutate("1mR" = rh_1,
+                                    "2mR" = rh_2,
+                                    "3mR" = rh_3,
+                                    "4mR" = rh_4,
+                                    "5mR" = rh_5,
+                                    "6mR" = rh_6,
+                                    "7mR" = rh_7,
+                                    "8mR" = rh_8,
+                                    "9mR" = rh_9,
+                                    "10mR" = rh_10,
+                                    "11mR" = rh_11,
+                                    "12mR" = rh_12, 
+                                    "3mRmean" = mean(rh_1:rh_3),
+                                    "6mRmean" = mean(rh_1:rh_6),
+                                    "9mRmean" = mean(rh_1:rh_9),
+                                    "1yR" = mean(rh_13:rh_24),
+                                    "2yR" = mean(rh_25:rh_36),
+                                    "3yR" = mean(rh_37:rh_48),
+                                    "0yR" = mean(rh_1:rh_12),
+                                    "4yR" = mean(rh_49:rh_60),
+                                    "2yRmean" = mean(rh_13:rh_36),
+                                    "3yRmean" = mean(rh_13:rh_48),
+                                    "4yRmean" = mean(rh_13:rh_60),
+                                    "5yRmean" = mean(rh_1:rh_60))
+
+
+#remove uneccessary columns
+col_cmi = colnames(cmi) %>% as_tibble() %>%  dplyr::slice(-(2)) %>%  pull() 
+cmi_ii = cmi_ii%>%  select(-one_of(col_cmi)) %>%  view()
+
+col_rh = colnames(rh) %>% as_tibble() %>%  dplyr::slice(-(2)) %>%  pull() 
+rh_ii = rh_ii %>%  select(-one_of(col_rh))
+
+## combine all
+monthly_clim_5yr = purrr::reduce(list(cmi_ii,rh_ii), dplyr::left_join, by = 'raster_id')
+
+bs = bs %>%  select(c(raster_id, RBR_median, RBR_quant))
+
+#join to clim data by raster id
+clim_bs = bs %>%  left_join(monthly_clim_5yr, by = "raster_id")
+clim_bs %>% view
+
+#save dataset as rds
+write.csv(clim_bs, "data/bs-moisture-lags-data-v0.csv")
+tt = read.csv("data/bs-moisture-lags-data-v0.csv")
+names (tt) = tt %>% names () %>%  str_replace_all(.,"^X", "")
+tt %>%  view
+
+```
+

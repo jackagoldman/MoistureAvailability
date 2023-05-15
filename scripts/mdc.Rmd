@@ -1,0 +1,753 @@
+---
+title: "mdc-script"
+author: "Jack A Goldman"
+date: "2023-05-12"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir = "~/Work/PhD/MoistureAvailability/")
+
+```
+
+load required packages
+```{r}
+
+library(tidyverse)
+library(lubridate)
+library(janitor)
+library(purrr)
+library(sf)
+
+```
+
+read in data
+```{r}
+monthly = read.csv("~/Google Drive/My Drive/OntBSdb/Climate/On_Fire_Elevation_1980-2020M.csv")
+bs  = read.csv2("~/Google Drive/My Drive/OntBSdb/Clean_Tables//OnShield_FIRE_BS_v1.csv")
+```
+
+get month and yof
+```{r}
+
+yof <- bs %>% select(c(raster_id, Fire_Year, julday, FIRE_START))
+yof = yof %>%  mutate(month = lubridate::month(FIRE_START))
+yof %>% group_by(month) %>% summarise(count = n ())
+
+yof = yof %>%  mutate(month = month + 12 )
+```
+
+Make data frame that looks at precipitation per month
+```{r}
+oldnames_b4 = c("PPT01_b4", 
+                "PPT02_b4",
+                "PPT03_b4",
+                "PPT04_b4",
+                "PPT05_b4", "PPT06_b4", "PPT07_b4", "PPT08_b4", "PPT09_b4",
+                "PPT10_b4", "PPT11_b4", "PPT12_b4")
+newnames_b4 = c(13:24)
+
+oldnames_fy = c("PPT01_fy", 
+                "PPT02_fy",
+                "PPT03_fy",
+                "PPT04_fy",
+                "PPT05_fy", "PPT06_fy", "PPT07_fy", "PPT08_fy", "PPT09_fy",
+                "PPT10_fy", "PPT11_fy", "PPT12_fy")
+newnames_fy = c(1:12)
+
+oldnames_2b4 = c("PPT01_2b4", 
+                 "PPT02_2b4",
+                 "PPT03_2b4",
+                 "PPT04_2b4",
+                 "PPT05_2b4", "PPT06_2b4", "PPT07_2b4", "PPT08_2b4", "PPT09_2b4",
+                 "PPT10_2b4", "PPT11_2b4", "PPT12_2b4")
+newnames_2b4 = c(25:36)
+
+oldnames_3b4 = c("PPT01_3b4", 
+                 "PPT02_3b4",
+                 "PPT03_3b4",
+                 "PPT04_3b4",
+                 "PPT05_3b4", "PPT06_3b4", "PPT07_3b4", "PPT08_3b4", "PPT09_3b4",
+                 "PPT10_3b4", "PPT11_3b4", "PPT12_3b4")
+newnames_3b4 = c(37:48)
+
+oldnames_4b4 = c("PPT01_4b4", 
+                 "PPT02_4b4",
+                 "PPT03_4b4",
+                 "PPT04_4b4",
+                 "PPT05_4b4", "PPT06_4b4", "PPT07_4b4", "PPT08_4b4", "PPT09_4b4",
+                 "PPT10_4b4", "PPT11_4b4", "PPT12_4b4")
+newnames_4b4 = c(49:60)
+
+oldnames_5b4 = c("PPT01_5b4", 
+                 "PPT02_5b4",
+                 "PPT03_5b4",
+                 "PPT04_5b4",
+                 "PPT05_5b4", "PPT06_5b4", "PPT07_5b4", "PPT08_5b4", "PPT09_5b4",
+                 "PPT10_5b4", "PPT11_5b4", "PPT12_5b4")
+newnames_5b4 = c(61:72)
+
+oldnames_6b4 = c("PPT01_6b4", 
+                 "PPT02_6b4",
+                 "PPT03_6b4",
+                 "PPT04_6b4",
+                 "PPT05_6b4", "PPT06_6b4", "PPT07_6b4", "PPT08_6b4", "PPT09_6b4",
+                 "PPT10_6b4", "PPT11_6b4", "PPT12_6b4")
+newnames_6b4 = c(73:84)
+
+##
+y5_prior <- monthly %>% select(starts_with(c( "PPT",  'Year', "ID1"))) %>% 
+  rename(raster_id = ID1) %>% left_join(yof) %>% 
+  relocate(raster_id, Fire_Year, .before = PPT01) %>% 
+  mutate(gap1 =(Fire_Year -1),
+         gap2 = (Fire_Year - 2),
+         gap3 = (Fire_Year - 3),
+         gap4 = (Fire_Year - 4),
+         gap5 = (Fire_Year - 5),
+         gap6 = (Fire_Year - 6)) %>% # add a gap of 6 to get 6 years before fire 
+  filter(Year == gap1 | Year == Fire_Year | Year == gap2 
+         |Year == gap3 | Year == gap4 |Year ==gap5 | Year ==gap6) %>% 
+  mutate(temp = case_when(Year == Fire_Year ~ "fy",
+                          Year == (Fire_Year - 1) ~ "b4",
+                          Year == (Fire_Year - 2) ~ "2b4",
+                          Year == (Fire_Year - 3) ~ "3b4",
+                          Year ==(Fire_Year - 4) ~ "4b4",
+                          Year ==(Fire_Year - 5) ~ "5b4",
+                          Year ==(Fire_Year - 6) ~ "6b4")) %>% 
+  pivot_wider(id_cols = c("raster_id","Year", "Fire_Year"), names_from = temp, 
+              values_from = c(PPT01:PPT12)) %>% 
+  relocate(ends_with("b4"), .before = PPT01_fy) %>% 
+  relocate(ends_with("2b4"), .before = PPT01_b4)  %>% 
+  relocate(ends_with("3b4"), .before = PPT01_2b4) %>% 
+  relocate(ends_with("4b4"), .before = PPT01_3b4) %>% 
+  relocate(ends_with("5b4"), .before = PPT01_4b4) %>% 
+  relocate(ends_with("6b4"), .before = PPT01_5b4) %>% 
+  rename_with(~ as.character(newnames_b4) , all_of(oldnames_b4)) %>% 
+  rename_with(~ as.character(newnames_fy) , all_of(oldnames_fy)) %>% 
+  rename_with(~ as.character(newnames_2b4) , all_of(oldnames_2b4)) %>% 
+  rename_with(~ as.character(newnames_3b4) , all_of(oldnames_3b4)) %>% 
+  rename_with(~ as.character(newnames_4b4) , all_of(oldnames_4b4)) %>% 
+  rename_with(~ as.character(newnames_5b4) , all_of(oldnames_5b4))  %>% 
+  rename_with(~ as.character(newnames_6b4) , all_of(oldnames_6b4))
+  # for each raster i need to collect all rows that aren't NA.
+
+
+y5_prior1 = y5_prior %>%  
+  filter_at(vars(c(`1`:`12`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior2 = y5_prior %>% 
+  filter_at(vars(c(`13`:`24`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior3 = y5_prior %>%
+  filter_at(vars(c(`25`:`36`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior4 = y5_prior %>%
+  filter_at(vars(c(`37`:`48`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior5 = y5_prior %>%
+  filter_at(vars(c(`49`:`60`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior6 = y5_prior %>%
+  filter_at(vars(c(`61`:`72`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior7 = y5_prior %>%
+  filter_at(vars(c(`73`:`84`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+#y5_prior = rbind(y5_prior1, y5_prior2, y5_prior3, y5_prior4, y5_prior5, y5_prior6, y5_prior7)
+
+y5_prior11 = y5_prior1 %>% 
+  left_join(y5_prior2, by = "raster_id") %>%  
+  select(!c(Year.y, Fire_Year.y ))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior3, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior4, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior5, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior6, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior7, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+
+#flip months around so 
+
+y5_prior_flip <- y5_prior11 %>%
+  left_join(yof, by = "raster_id") %>% 
+  relocate(month, .before =`1`) %>% 
+  mutate(flip_month = case_when( # create a month column that corresponds to the flipped month, fire start month
+    month == 5 ~ "8",
+    month == 3 ~ "10",
+    month == 4 ~ "9",
+    month == 6 ~"7",
+    month == 7 ~ "6",
+    month == 8 ~ "5",
+    month == 9 ~ "4",
+    month == 10 ~"3",
+    month == 11 ~ "2")) %>% 
+  relocate(flip_month, .before = `1`) %>% 
+  rename(`1` = `12`,  # flip the months 
+         `2` = `11`, 
+         `3` = `10`,
+         `4` = `9`,
+         `5` = `8`,
+         `6` = `7`,
+         `7` = `6`,
+         `8` = `5`,
+         `9` = `4`,
+         `10` = `3`,
+         `11` = `2`,
+         `12` = `1`) %>% 
+  relocate(`12`, .after = `1`) %>% # relocate months column
+  relocate(`11`, .before = `12`) %>% 
+  relocate(`10`, .before = `11`) %>% 
+  relocate(`9`, .before = `10`) %>%
+  relocate(`8`, .before = `9`) %>% 
+  relocate(`7`, .before = `8`) %>% 
+  relocate(`6`, .before = `7`) %>% 
+    relocate(`5`, .before = `6`) %>% 
+    relocate(`4`, .before = `5`) %>% 
+    relocate(`3`, .before = `4`) %>% 
+    relocate(`2`, .before = `3`) %>% 
+    relocate(`1`, .before = `2`) 
+
+
+# get the required months for each fire start date
+
+
+names.new = as.character(c(1:61))
+#right now I am including the month of fire, I do not want that, I want the month before fire. therefore I need to take off 1 month 
+# if i would want to include fire month argument !c(1:10) would be 1:9 and names.new , c(10:70)
+
+y5_priormarch = select(filter(y5_prior_flip, flip_month == 10),!c(`1`:`10`)) %>%   
+  select(!c(67:82)) %>% rename_with(~names.new, c(`11`:`71`)) %>% select(-c(66))
+
+y5_priorapril = select(filter(y5_prior_flip, flip_month == 9),!c(`1`:`9`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`10`:`70`)) %>% select(-c(66:67))
+
+y5_priormay = select(filter(y5_prior_flip, flip_month == 8),!c(`1`:`8`))%>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`9`:`69`)) %>% select(-c(66:68))
+
+y5_priorjune = select(filter(y5_prior_flip, flip_month == 7),!c(`1`:`7`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`8`:`68`)) %>% select(-c(66:69))
+
+y5_priorjuly = select(filter(y5_prior_flip, flip_month == 6),!c(`1`:`6`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`7`:`67`)) %>% select(-c(66:70))
+
+y5_prioraug = select(filter(y5_prior_flip, flip_month == 5),!c(`1`:`5`))  %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`6`:`66`)) %>% select(-c(66:71))
+
+y5_priorsept = select(filter(y5_prior_flip, flip_month == 4),!c(`1`:`4`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`5`:`65`)) %>% select(-c(66:72))
+
+y5_prioroct = select(filter(y5_prior_flip, flip_month == 3),!c(`1`:`3`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`4`:`64`)) %>% select(-c(66:73))
+
+y5_priornov = select(filter(y5_prior_flip, flip_month == 2),!c(`1`:`2`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`3`:`63`)) %>% select(-c(66:74))
+
+y5_priorv0 = rbind(y5_priormarch, y5_priorapril, y5_priormay, y5_priorjune, y5_priorjuly, y5_prioraug,
+                   y5_priorsept, y5_prioroct, y5_priornov)
+
+
+
+# alter 1 to 60 to say Tmax_1 to Tmax_60
+y5_prior60 = y5_priorv0 %>%
+  rename_with( ~ paste("ppt", colnames(y5_priorv0), sep = "_")) %>% 
+  select(!c(ppt_Year.x, ppt_month, ppt_Fire_Year.x))
+
+ppt_60months_prior <- y5_prior60 
+  ppt_60months_prior <- ppt_60months_prior %>% 
+    rename(raster_id = ppt_raster_id)
+  #save it
+  write.csv(ppt_60months_prior, "~/Desktop/OneDrive - University of Toronto/Data/ppt-5yr-lag-data.csv", row.names = FALSE, quote=FALSE)
+```
+
+maximum temperature
+```{r}
+
+oldnames_b4 = c("Tmax01_b4", 
+                "Tmax02_b4",
+                "Tmax03_b4",
+                "Tmax04_b4",
+                "Tmax05_b4", "Tmax06_b4", "Tmax07_b4", "Tmax08_b4", "Tmax09_b4",
+                "Tmax10_b4", "Tmax11_b4", "Tmax12_b4")
+newnames_b4 = c(13:24)
+
+oldnames_fy = c("Tmax01_fy", 
+                "Tmax02_fy",
+                "Tmax03_fy",
+                "Tmax04_fy",
+                "Tmax05_fy", "Tmax06_fy", "Tmax07_fy", "Tmax08_fy", "Tmax09_fy",
+                "Tmax10_fy", "Tmax11_fy", "Tmax12_fy")
+newnames_fy = c(1:12)
+
+oldnames_2b4 = c("Tmax01_2b4", 
+                 "Tmax02_2b4",
+                 "Tmax03_2b4",
+                 "Tmax04_2b4",
+                 "Tmax05_2b4", "Tmax06_2b4", "Tmax07_2b4", "Tmax08_2b4", "Tmax09_2b4",
+                 "Tmax10_2b4", "Tmax11_2b4", "Tmax12_2b4")
+newnames_2b4 = c(25:36)
+
+oldnames_3b4 = c("Tmax01_3b4", 
+                 "Tmax02_3b4",
+                 "Tmax03_3b4",
+                 "Tmax04_3b4",
+                 "Tmax05_3b4", "Tmax06_3b4", "Tmax07_3b4", "Tmax08_3b4", "Tmax09_3b4",
+                 "Tmax10_3b4", "Tmax11_3b4", "Tmax12_3b4")
+newnames_3b4 = c(37:48)
+
+oldnames_4b4 = c("Tmax01_4b4", 
+                 "Tmax02_4b4",
+                 "Tmax03_4b4",
+                 "Tmax04_4b4",
+                 "Tmax05_4b4", "Tmax06_4b4", "Tmax07_4b4", "Tmax08_4b4", "Tmax09_4b4",
+                 "Tmax10_4b4", "Tmax11_4b4", "Tmax12_4b4")
+newnames_4b4 = c(49:60)
+
+oldnames_5b4 = c("Tmax01_5b4", 
+                 "Tmax02_5b4",
+                 "Tmax03_5b4",
+                 "Tmax04_5b4",
+                 "Tmax05_5b4", "Tmax06_5b4", "Tmax07_5b4", "Tmax08_5b4", "Tmax09_5b4",
+                 "Tmax10_5b4", "Tmax11_5b4", "Tmax12_5b4")
+newnames_5b4 = c(61:72)
+
+oldnames_6b4 = c("Tmax01_6b4", 
+                 "Tmax02_6b4",
+                 "Tmax03_6b4",
+                 "Tmax04_6b4",
+                 "Tmax05_6b4", "Tmax06_6b4", "Tmax07_6b4", "Tmax08_6b4", "Tmax09_6b4",
+                 "Tmax10_6b4", "Tmax11_6b4", "Tmax12_6b4")
+newnames_6b4 = c(73:84)
+
+##
+y5_prior <- monthly %>% select(starts_with(c( "Tmax",  'Year', "ID1"))) %>% 
+  rename(raster_id = ID1) %>% left_join(yof) %>% 
+  relocate(raster_id, Fire_Year, .before = Tmax01) %>% 
+  mutate(gap1 =(Fire_Year -1),
+         gap2 = (Fire_Year - 2),
+         gap3 = (Fire_Year - 3),
+         gap4 = (Fire_Year - 4),
+         gap5 = (Fire_Year - 5),
+         gap6 = (Fire_Year - 6)) %>% # add a gap of 6 to get 6 years before fire 
+  filter(Year == gap1 | Year == Fire_Year | Year == gap2 
+         |Year == gap3 | Year == gap4 |Year ==gap5 | Year ==gap6) %>% 
+  mutate(temp = case_when(Year == Fire_Year ~ "fy",
+                          Year == (Fire_Year - 1) ~ "b4",
+                          Year == (Fire_Year - 2) ~ "2b4",
+                          Year == (Fire_Year - 3) ~ "3b4",
+                          Year ==(Fire_Year - 4) ~ "4b4",
+                          Year ==(Fire_Year - 5) ~ "5b4",
+                          Year ==(Fire_Year - 6) ~ "6b4")) %>% 
+  pivot_wider(id_cols = c("raster_id","Year", "Fire_Year"), names_from = temp, 
+              values_from = c(Tmax01:Tmax12)) %>% 
+  relocate(ends_with("b4"), .before = Tmax01_fy) %>% 
+  relocate(ends_with("2b4"), .before = Tmax01_b4)  %>% 
+  relocate(ends_with("3b4"), .before = Tmax01_2b4) %>% 
+  relocate(ends_with("4b4"), .before = Tmax01_3b4) %>% 
+  relocate(ends_with("5b4"), .before = Tmax01_4b4) %>% 
+  relocate(ends_with("6b4"), .before = Tmax01_5b4) %>% 
+  rename_with(~ as.character(newnames_b4) , all_of(oldnames_b4)) %>% 
+  rename_with(~ as.character(newnames_fy) , all_of(oldnames_fy)) %>% 
+  rename_with(~ as.character(newnames_2b4) , all_of(oldnames_2b4)) %>% 
+  rename_with(~ as.character(newnames_3b4) , all_of(oldnames_3b4)) %>% 
+  rename_with(~ as.character(newnames_4b4) , all_of(oldnames_4b4)) %>% 
+  rename_with(~ as.character(newnames_5b4) , all_of(oldnames_5b4))  %>% 
+  rename_with(~ as.character(newnames_6b4) , all_of(oldnames_6b4))
+  # for each raster i need to collect all rows that aren't NA.
+
+
+y5_prior1 = y5_prior %>%  
+  filter_at(vars(c(`1`:`12`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior2 = y5_prior %>% 
+  filter_at(vars(c(`13`:`24`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior3 = y5_prior %>%
+  filter_at(vars(c(`25`:`36`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior4 = y5_prior %>%
+  filter_at(vars(c(`37`:`48`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+
+y5_prior5 = y5_prior %>%
+  filter_at(vars(c(`49`:`60`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior6 = y5_prior %>%
+  filter_at(vars(c(`61`:`72`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+y5_prior7 = y5_prior %>%
+  filter_at(vars(c(`73`:`84`)), any_vars(!(is.na(.)))) %>%
+  select_if(~ !any(is.na(.))) 
+
+#y5_prior = rbind(y5_prior1, y5_prior2, y5_prior3, y5_prior4, y5_prior5, y5_prior6, y5_prior7)
+
+y5_prior11 = y5_prior1 %>% 
+  left_join(y5_prior2, by = "raster_id") %>%  
+  select(!c(Year.y, Fire_Year.y ))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior3, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior4, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior5, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior6, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+y5_prior11 = y5_prior11 %>% 
+  left_join(y5_prior7, by = "raster_id") %>% 
+  select(!c(Year, Fire_Year))
+
+
+#flip months around so 
+
+y5_prior_flip <- y5_prior11 %>%
+  left_join(yof, by = "raster_id") %>% 
+  relocate(month, .before =`1`) %>% 
+  mutate(flip_month = case_when( # create a month column that corresponds to the flipped month, fire start month
+    month == 5 ~ "8",
+    month == 3 ~ "10",
+    month == 4 ~ "9",
+    month == 6 ~"7",
+    month == 7 ~ "6",
+    month == 8 ~ "5",
+    month == 9 ~ "4",
+    month == 10 ~"3",
+    month == 11 ~ "2")) %>% 
+  relocate(flip_month, .before = `1`) %>% 
+  rename(`1` = `12`,  # flip the months 
+         `2` = `11`, 
+         `3` = `10`,
+         `4` = `9`,
+         `5` = `8`,
+         `6` = `7`,
+         `7` = `6`,
+         `8` = `5`,
+         `9` = `4`,
+         `10` = `3`,
+         `11` = `2`,
+         `12` = `1`) %>% 
+  relocate(`12`, .after = `1`) %>% # relocate months column
+  relocate(`11`, .before = `12`) %>% 
+  relocate(`10`, .before = `11`) %>% 
+  relocate(`9`, .before = `10`) %>%
+  relocate(`8`, .before = `9`) %>% 
+  relocate(`7`, .before = `8`) %>% 
+  relocate(`6`, .before = `7`) %>% 
+    relocate(`5`, .before = `6`) %>% 
+    relocate(`4`, .before = `5`) %>% 
+    relocate(`3`, .before = `4`) %>% 
+    relocate(`2`, .before = `3`) %>% 
+    relocate(`1`, .before = `2`) 
+
+
+# get the required months for each fire start date
+
+
+names.new = as.character(c(1:61))
+#right now I am including the month of fire, I do not want that, I want the month before fire. therefore I need to take off 1 month 
+# if i would want to include fire month argument !c(1:10) would be 1:9 and names.new , c(10:70)
+
+y5_priormarch = select(filter(y5_prior_flip, flip_month == 10),!c(`1`:`10`)) %>%   
+  select(!c(67:82)) %>% rename_with(~names.new, c(`11`:`71`)) %>% select(-c(66))
+
+y5_priorapril = select(filter(y5_prior_flip, flip_month == 9),!c(`1`:`9`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`10`:`70`)) %>% select(-c(66:67))
+
+y5_priormay = select(filter(y5_prior_flip, flip_month == 8),!c(`1`:`8`))%>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`9`:`69`)) %>% select(-c(66:68))
+
+y5_priorjune = select(filter(y5_prior_flip, flip_month == 7),!c(`1`:`7`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`8`:`68`)) %>% select(-c(66:69))
+
+y5_priorjuly = select(filter(y5_prior_flip, flip_month == 6),!c(`1`:`6`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`7`:`67`)) %>% select(-c(66:70))
+
+y5_prioraug = select(filter(y5_prior_flip, flip_month == 5),!c(`1`:`5`))  %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`6`:`66`)) %>% select(-c(66:71))
+
+y5_priorsept = select(filter(y5_prior_flip, flip_month == 4),!c(`1`:`4`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`5`:`65`)) %>% select(-c(66:72))
+
+y5_prioroct = select(filter(y5_prior_flip, flip_month == 3),!c(`1`:`3`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`4`:`64`)) %>% select(-c(66:73))
+
+y5_priornov = select(filter(y5_prior_flip, flip_month == 2),!c(`1`:`2`)) %>% 
+  select(!c(67:82)) %>% rename_with(~names.new, c(`3`:`63`)) %>% select(-c(66:74))
+
+y5_priorv0 = rbind(y5_priormarch, y5_priorapril, y5_priormay, y5_priorjune, y5_priorjuly, y5_prioraug,
+                   y5_priorsept, y5_prioroct, y5_priornov)
+
+
+
+# alter 1 to 60 to say Tmax_1 to Tmax_60
+y5_prior60 = y5_priorv0 %>%
+  rename_with( ~ paste("Tmax", colnames(y5_priorv0), sep = "_")) %>% 
+  select(!c(Tmax_Year.x, Tmax_month, Tmax_Fire_Year.x))
+
+tmax_60months_prior <- y5_prior60 
+tmax_60months_prior <- tmax_60months_prior %>% 
+  rename(raster_id = Tmax_raster_id)
+#save it
+write.csv(tmax_60months_prior, "~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/tmax-5yr-lag-data.csv")
+```
+
+CALCULATE MDC
+```{r}
+# select the month of fire for each fire 
+month.of.fire <- monthly %>% 
+  rename(raster_id = ID1) %>% 
+  left_join(yof, by = "raster_id") %>% 
+  filter(Fire_Year == Year) %>% 
+  select(c(Year:Elevation, PPT01:PPT12,Tmax01:Tmax12, 187:190)) 
+
+
+
+ 
+
+month.of.fire.3 <- month.of.fire %>% filter(month == 3) %>% 
+  select(c(raster_id, PPT03, Tmax03)) %>% rename(ppt = PPT03, tmax = Tmax03)
+
+month.of.fire.4 <- month.of.fire %>% filter(month == 4) %>% 
+  select(c(raster_id, PPT04, Tmax04))%>% rename(ppt = PPT04, tmax = Tmax04)
+  
+month.of.fire.5 <- month.of.fire %>% filter(month == 5) %>% 
+  select(c(raster_id,PPT05, Tmax05)) %>% rename(ppt = PPT05, tmax = Tmax05)
+
+month.of.fire.6 <- month.of.fire %>% filter(month == 6) %>% 
+  select(c(raster_id,PPT06, Tmax06))%>% rename(ppt = PPT06, tmax = Tmax06)
+
+month.of.fire.7 <- month.of.fire %>% filter(month == 7) %>% 
+  select(c(raster_id,PPT07, Tmax07)) %>% rename(ppt = PPT07, tmax = Tmax07)
+
+month.of.fire.8 <- month.of.fire %>% filter(month == 8) %>% 
+  select(c(raster_id,PPT08, Tmax08)) %>% rename(ppt = PPT08, tmax = Tmax08)
+
+month.of.fire.9 <- month.of.fire %>% filter(month == 9) %>% 
+  select(c(raster_id,PPT09, Tmax09))%>% rename(ppt = PPT09, tmax = Tmax09)
+
+month.of.fire.10 <- month.of.fire %>% filter(month == 10) %>% 
+  select(c(raster_id,PPT10, Tmax10))%>% rename(ppt = PPT10, tmax = Tmax10)
+
+month.of.fire.11<- month.of.fire %>% filter(month == 11) %>% 
+  select(c(raster_id,PPT11, Tmax11))%>% rename(ppt = PPT11, tmax = Tmax11)
+
+ppt.tmax.fire.month <- rbind(month.of.fire.10, month.of.fire.11, month.of.fire.3, month.of.fire.4, month.of.fire.5, month.of.fire.6, month.of.fire.7, month.of.fire.8, month.of.fire.9)
+
+ppt.tmax.fire.month <- ppt.tmax.fire.month %>% 
+  rename(ppt_fm = ppt, tmax_fm = tmax)
+
+#read in ppt and tmax data
+ tmax <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/climate-data//tmax-5yr-lag-data.csv")
+
+ppt <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/climate-data//ppt-5yr-lag-data.csv")
+
+mdc.data <- tmax %>% left_join(ppt, by = "raster_id") %>% left_join(ppt.tmax.fire.month, by = "raster_id")
+
+#add month of fire to dataset
+mdc.data <- mdc.data %>% semi_join(yof, by = "raster_id") 
+mdc.data <- mdc.data %>% left_join(yof, by = "raster_id") 
+
+mdc.data <- mdc.data %>% mutate(lf = case_when(month == "1" ~ "6.5",
+                        month == "2" ~ "7.5",
+                        month == "3" ~ "9.0",
+                        month == "4" ~ "12.8",
+                        month == "5" ~ "13.9",
+                        month == "6" ~ "13.9",
+                        month == "7" ~ "12.4",
+                        month == "8" ~ "10.9",
+                        month == "9" ~ "9.4",
+                        month == "10" ~ "8.0",
+                        month == "11" ~ "7.0",
+                        month == "12" ~ "6.0"))
+
+mdc.data <- mdc.data %>% relocate(month, .after = Fire_Year) %>% 
+  mutate(month = as.character(month)) %>% 
+  unite("date", Fire_Year:month, sep = "-", remove = FALSE) %>% #create date column
+  mutate(date = paste0(date, "-01"), # add arbitrary day to the date formate 01
+         date = ymd(date),
+         days = days_in_month(date))
+
+mdc.data <- mdc.data %>% 
+  relocate(c(126:132), .before = Tmax_flip_month)
+
+mdc.data3 <- mdc.data %>% filter(month == 3) %>% 
+  mutate(lf = as.numeric(lf),
+         adj_mean_max_temp = case_when(mean_max_temp < "0" ~ as.numeric("0"),
+                                       TRUE ~ mean_max_temp),
+    Em = (days*((0.36*adj_mean_max_temp)+lf)))
+```
+
+
+
+
+
+
+
+### NOT USED
+get complete list of burned areas
+```{r}
+yof <- bs %>% select(c(raster_id, Fire_Year, julday, FIRE_START))
+yof = yof %>%  mutate(month = lubridate::month(FIRE_START))
+yof <- yof %>% 
+  semi_join(data_tlm, by = "raster_id") %>% view()
+
+wx <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/wx-data-1980-2020.csv")
+wx1 <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/Wx_data_1990_2021.csv")
+
+#format date
+  wx1$date= format(as.Date(wx1$WX_DATE, "%m/%d/%Y"))
+
+
+  #make into date
+wx1 <- wx1 %>% 
+  mutate(date = lubridate::ymd(date))
+
+wx1 <- wx1 %>% filter_at(vars(DC),any_vars(!is.na(.))) %>% 
+  mutate(
+         year = year(date),
+         month = month(date),
+         day = day(date)) %>% select(c(WSTNID, WX_DATE, FFMC, DC,DMC, ISI, BUI, FWI, LATITUDE, LONGITUDE, date, month, year, day))
+
+wx <- wx %>% 
+  filter_at(vars(DC),any_vars(!is.na(.))) %>% 
+  mutate(date = ymd(WX_DATE),
+         year = year(date),
+         month = month(date),
+         day = day(date)) %>% filter(year >= 1986 & year > 1990)
+
+wx.full <- rbind(wx1, wx)
+```
+
+Calculate mdc assume initial dc is 15.
+
+clean weather data
+overwinter- Gather weather data from ontario, and eccc to make composite of all the fall databases to get the all DC
+Missing complete weather DC data from 85 to 1990, ontario data only has 2 sept for 1985 to 90, so calculate the rest of the fall dc using eccc data with start values from ontario for sept
+```{r}
+
+wx <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/wx-data-1980-2020.csv")
+wx1 <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/Wx_data_1990_2021.csv")
+eccc <- read.csv("data/data-eccc-weath.csv")
+ #format date
+  wx1$date= format(as.Date(wx1$WX_DATE, "%m/%d/%Y"))
+
+#make into date
+wx1 <- wx1 %>% 
+  mutate(date = lubridate::ymd(date))
+
+#1990 - 2021 DC - get fall
+wx.fall <- wx1 %>% filter_at(vars(DC),any_vars(!is.na(.))) %>% 
+  mutate(
+         year = year(date),
+         month = month(date),
+         day = day(date)) %>% 
+  filter(month >= "09")
+
+#eccc fall - 85 to 1990
+eccc <- eccc %>% 
+  filter(month >= "09", year >= 1985 & year < 1990) %>% mutate(date = ymd(date))
+
+#clean fire weather data and get data for septmerb
+wx.sept <- wx %>% 
+  mutate(date = ymd(WX_DATE),
+    year = year(date),
+         month = month(date),
+         day = day(date)) %>% 
+  filter(month == "9"  & day == "30" & year >=1985 & year < 1990)
+
+
+#combine eccc and wx ontario 
+weather.comb <- eccc %>% 
+  left_join(wx.sept, by = "date")
+
+
+
+```
+
+identify eccc stations and wx stations that are near by based on coordinates
+```{r}
+eccc <- eccc %>% 
+  rename(lat = lat.x)
+wx.sept <- wx.sept %>% 
+  rename(lat = LATITUDE, lon = LONGITUDE)
+
+eccc.ids <- eccc %>% 
+  select(c(station_id, lat, lon)) %>% 
+  distinct(station_id, .keep_all = TRUE)
+
+wx.sept.ids <- wx.sept %>% 
+  rename(station_id = WSTNID) %>% 
+  select(c(station_id, lat, lon)) %>% 
+  distinct(station_id, .keep_all = TRUE)
+
+eccc.ids.sf <- st_as_sf(x = eccc.ids, 
+                        coords = c("lon", "lat"),
+                        crs = "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+wx.sept.ids.sf <- st_as_sf(x = wx.sept.ids, 
+                        coords = c("lon", "lat"),
+                        crs = "+proj=longlat +datum=WGS84 +ellps=WGS84 +towgs84=0,0,0")
+
+nearest_id <- st_nearest_feature(eccc.ids.sf, wx.sept.ids.sf)
+
+nearest_dist <- st_distance(eccc.ids.sf, wx.sept.ids.sf[nearest_id,], 
+                            by_element = TRUE)
+
+matching.stations <- cbind(eccc.ids.sf, nearest_id, nearest_dist)
+matching.stations %>% view()
+
+wx.sept.filt <- wx.sept %>% 
+  slice(35, 3, 1, 25, 13, 9, 2, 32, 34, 36, 27, 30)
+
+wx %>% mutate(date = ymd(WX_DATE),
+    year = year(date),
+         month = month(date),
+         day = day(date)) %>% filter(year >= 1985 & year <= 1990 & WSTNID == "SAN" & month == "9")
+
+
+```
+
+
+
+
+
+

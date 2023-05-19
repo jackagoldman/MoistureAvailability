@@ -20,6 +20,7 @@ library(readr)
 
 data_tlm <- read.csv("data/bs-moisture-lags-data-v0.csv")
 names(data_tlm) <- data_tlm %>% names () %>%  str_replace_all(.,"^X", "")
+
 #
 #yof <- bs %>% select(c(raster_id, Fire_Year, julday, FIRE_START))
 #yof = yof %>%  mutate(month = lubridate::month(FIRE_START)) %>% select(c(raster_id, month))
@@ -29,16 +30,17 @@ names(data_tlm) <- data_tlm %>% names () %>%  str_replace_all(.,"^X", "")
 
 #data_tlm <- data_tlm %>% filter(month >= "5")
 
-#covariates
+covariates
 #covariates <- read_csv2("data/nwo-managedarea-covariates.csv")
+covariates <- read.csv("~/Google Drive/My Drive/boreal-fires-forest-area-calc/nwo-forest-cover-v0.csv")
 
 #select covariates of interest
 #covariates <- select(covariates, c("raster_id"))#, "per_fc", "yearf"))
-
+covariates <- select(covariates, c("raster_id", "coniferPercent", "forestPercent"))
 #join covariates to climate data and remove id
-#data_tlm <- data_tlm %>% 
-  #left_join
-#semi_join(covariates, by = "raster_id") #%>% 
+data_tlm <- data_tlm %>% 
+semi_join(covariates, by = "raster_id") %>% 
+  left_join(covariates, by = "raster_id")
 #  select(-c(2))
 
 # Remove first column
@@ -801,8 +803,7 @@ full.imp.im.plot= med_imp %>%
   mutate(Feature = fct_reorder(Feature, Gain)) %>% 
   mutate(Climate_Metrics = case_when(
     grepl("C", Feature) ~ "Climate Moisture Index",
-    grepl("R", Feature) ~ "Relative Humidity",
-    grepl("T", Feature) ~"Maximum Temperature"
+    grepl("R", Feature) ~ "Relative Humidity"
   )) %>% 
   mutate(Temporal_Dynamics = case_when(
     grepl("yCsum", Feature) ~ "Yearly",

@@ -610,11 +610,89 @@ mdc.data <- mdc.data %>% relocate(month, .after = Fire_Year) %>%
 mdc.data <- mdc.data %>% 
   relocate(c(126:132), .before = Tmax_flip_month)
 
-mdc.data3 <- mdc.data %>% filter(month == 3) %>% 
-  mutate(lf = as.numeric(lf),
-         adj_mean_max_temp = case_when(mean_max_temp < "0" ~ as.numeric("0"),
-                                       TRUE ~ mean_max_temp),
-    Em = (days*((0.36*adj_mean_max_temp)+lf)))
+mdc.data.tmax <- mdc.data %>% 
+  select(c(raster_id, Tmax_1:Tmax_60))
+
+mdc.data.tmax[mdc.data.tmax<0] <- 0.0
+
+mdc.data.v1 <- mdc.data %>% select(-c(Tmax_1:Tmax_60)) %>% 
+  left_join(mdc.data.tmax, by = "raster_id")
+  
+mdc.data.v1 <- mdc.data.v1 %>% 
+  mutate(lf = as.numeric(lf)) 
+
+#get tmax col names 
+tmax_names <- mdc.data.v1 %>% select(c(Tmax_1:Tmax_60)) %>% colnames()
+i = "Tmax_1"
+raster.id <- unique(mdc.data.v1$raster_id)
+j <- "FOR1_2000_59_rbr"
+out_list <- list()
+second_list <- list()
+#for loop
+for(j in (raster.id)){
+  
+  mdc.data.id <- filter(mdc.data.v1, raster_id == j)
+
+  for(i in (tmax_names)){
+  #set up data calculation
+  month.query <- gsub("[^_]*_","",i) # get the month of the observation
+  col.name <- i
+  col.select <- select(mdc.data.id, c(raster_id, days, lf,col.name )) #select the required columns
+  row.df <- rowwise(col.select, raster_id) #organize df as rowwise for operations
+  row.df <- rename(row.df, tmax = c(4))# rename column to tmax
+  row.df$lf <- as.numeric(row.df$lf)# make sure day length is numeric
+  
+  # calculate potential evapotranspiration
+  df <- mutate(row.df, em = (days*((0.36*tmax)+lf))) 
+
+  #calculate dc half
+  df <- mutate(df, dchalf = 0 + (0.25*em))
+  
+  #get precipitation
+  ppt <- paste0("ppt", "_", month.query)
+  ppt.select <- select(mdc.data.id, c(raster_id, ppt))
+  ppt.select <- rowwise(ppt.select)
+  df <- left_join(df, ppt.select, by = "raster_id")
+  df <- rename(df, ppt = c(7)) # rename ppt to allow a query in formula
+  
+  #calculate rmeff 0.83 x ppt
+  df <- mutate(df, rmeff =(0.83*ppt))
+  
+  
+  #calculate qmr 
+  df <- mutate(df, qmr = 800^(-dchalf/400) + (13.937*rmeff))
+  
+  # if qmr is >800 set to equal 800
+  df$qmr[df$qmr >800] <- 800
+  
+  #calculate MDCm 400 ln (800/Qmr)10.25Em
+  df<- mutate(df, MDCm = 400*(log(800/qmr))+ (0.25*em))
+  
+  #calculate mdc
+  df <- mutate(df, mdc = (0 + MDCm)/2)
+  
+  #select variables to return
+  df <- select(df, c("raster_id", "mdc"))
+  
+  #rename mdc column with month association
+  names(df)[names(df) == 'mdc'] <- paste0("mdc", "_", month.query) 
+  
+  #
+  out_list[[i]] <- df
+
+  }
+  data <-  as.data.frame(do.call(cbind, out_list))
+  names(data) <- gsub(x = names(data), "^.*\\.","")
+  data <- subset(data, select=which(!duplicated(names(data)))) # remove duplicated names
+  second_list[[j]] <- data
+}
+
+mdc_df <- as.data.frame(do.call(rbind, second_list))
+rownames(mdc_df) <- NULL
+
+
+write.csv(mdc_df, "~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/climate-data/mdc-no-memory-on-shield-fires-85-2020.csv")
+
 ```
 
 

@@ -1,0 +1,173 @@
+---
+title: "bhe-uco-dates"
+author: "Jack A Goldman"
+date: "2023-05-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyverse)
+
+```
+
+
+```{r}
+bhe.uco <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/fire-information/raw//historical_fires_1960_2021.csv")
+
+fires <- read.csv2("~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/burn-severity-data-85-2020/no-reburns-no-pb/OnShield_FIRE_BS_v1.csv")
+
+```
+filter bho.uco data for 1986-2020 and unite cur_dist and fire number
+```{r}
+bhe.uco <- bhe.uco %>% 
+  rename_with(tolower) %>% 
+  filter(fire_year >= 1985) %>% 
+  unite(fire_id, c("prev_dist", "fire_number", "fire_year"), sep = "", remove = FALSE)
+bhe.uco$start_date <-  format(as.Date(bhe.uco$start_date, "%m/%d/%Y"))
+        
+        
+```
+
+make fire_id column by splitting raster_id in fires database
+```{r}
+fires_stripped <- fires %>% 
+  select(c(raster_id, Fire_Year, ftype, FIRE_START)) %>% 
+  mutate(raster.id = raster_id) %>% 
+  mutate_at(vars(1) , funs(gsub("\\_.*", "", .))) %>% 
+  unite(fire_id, c("raster_id", "Fire_Year"), sep = "", remove = FALSE) %>% 
+  select(c(fire_id, raster.id, ftype, FIRE_START)) %>% rename(start_date = FIRE_START)
+
+
+
+```
+combine datasets
+
+```{r}
+#first try
+bhe.uco.fires <- bhe.uco %>% 
+  semi_join(fires_stripped, by = c("fire_id")) %>% 
+  left_join(fires_stripped, by = c("fire_id")) %>% 
+  select(c(fire_id, bhe_date, uco_date, out_date, fuel_type, objective, wx_station, start_date, final_size, raster.id,latitude, longitude, raster.id)) %>% rename(raster_id = raster.id) # additional 34 fires due to duplicates
+
+#check duplicates  
+test <- bhe.uco %>% semi_join(fires_stripped, by =  c("fire_id"))# this corrects for most, but i have 11 missing fires
+
+
+#searching for duplicates when i dont join by start_date - when i first tried to join the data it did returned duplicates, 
+# i check the duplicates and they were because of differene in start date, so i joined by start date and this corrected
+# however there are 10 fires that have a different start date which are no duplicates
+# in this case i used the start dates from the dataset where i calculated the burn severity
+# this code returns the duplicates
+dups1 <- test %>% get_dupes(fire_id)
+
+dup_ids <- test[duplicated(test$fire_id),]
+dup_ids <- dup_ids %>% select(fire_id)
+bhe.uco.dups <- bhe.uco %>% filter(fire_id %in% dup_ids$fire_id)
+
+# save duplicates
+write.csv(dup_ids, "~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/fire-information/clean/bhe-uco-duplicate-fire-ids-86-2020.csv")
+
+# join by fire_id and date
+bhe.uco.fires <- bhe.uco %>% 
+  semi_join(fires_stripped, by = c("fire_id", "start_date")) %>% 
+  left_join(fires_stripped, by = c("fire_id", "start_date")) %>% 
+  select(c(fire_id, bhe_date, uco_date, out_date, fuel_type, objective, wx_station, start_date, final_size, raster.id,latitude, longitude, raster.id)) %>% rename(raster_id = raster.id) # 11 missing fires
+write.csv(bhe.uco.fires,"~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/fire-information/clean/bhe-uco-86-2020.csv")
+
+
+#now to correct for the missing fires because of different start dates between my fire database and the bhe.uco data, I will use the start dates from my fires. To do this i will get the missing fires, in bhe, drop the start date column. the issue 
+# i will not be able to use these fires because they will not have the proper bhe dates so I will not use these in the analysis.
+#which ones are missing from test in fires
+bhe.uco.missing <- fires_stripped %>% anti_join(test, by = "fire_id") %>% rename(raster_id = raster.id)
+write.csv(bhe.uco.missing,"~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/fire-information/clean/bhe-uco-86-2020-missing-fire-ids.csv")
+
+fires %>% rename_with(tolower) %>% filter(raster_id %in% missing.after.test1$raster_id )
+#
+```
+
+
+clean up the bhe.uco.fires data
+```{r}
+bhe <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/fire-information/clean/bhe-uco-86-2020.csv")
+
+# inspect fueltypes
+bhe %>% group_by(fuel_type) %>% summarise(count = n())#what is ccs or ccv fuel types
+
+#clean dates
+bhe$bhe_date <-  format(as.Date(bhe$bhe_date, "%m/%d/%Y"))
+bhe$uco_date <-  format(as.Date(bhe$uco_date, "%m/%d/%Y"))
+bhe$out_date <-  format(as.Date(bhe$out_date, "%m/%d/%Y"))
+
+#choose dates - if bhe and uco dates are NA choose out_date, 
+# if uco date is is NA and bhe date is a month before out-date, choose out date
+# if bhe-date is NA and uco date is a month before out-date, choose uco date
+#if bhe-date is a month before uco date and out-date choose bhe-date
+#make month columns and day columns
+
+bhe <- bhe %>% 
+  mutate(bhe_day = yday(bhe_date),
+         bhe_month = month(bhe_date),
+         uco_day = yday(uco_date),
+         uco_month = month(uco_date),
+         out_day = yday(out_date),
+         out_month = month(out_date),
+         out_uco_diff = (out_day - uco_day),
+         uco_bhe_diff = (uco_day - bhe_day),
+         out_bhe_diff = (out_day - bhe_day))
+
+bhe_cleaned <- bhe %>% 
+  mutate(end_date = case_when(
+    is.na(bhe_date) & is.na(uco_date) ~ out_date,
+    is.na(uco_date) & bhe_month < out_date ~ out_date,
+    is.na(bhe_date) & uco_month < out_date ~ uco_date,
+    bhe_month < uco_date & bhe_month < out_month ~ bhe_date,
+    bhe_date == uco_date ~ uco_date,
+    bhe_date == uco_date & bhe_date == out_date ~ out_date,
+    bhe_month = uco_month & uco_month < out_month & out_uco_diff > is.numeric("10") ~ uco_date,
+    bhe_month = out_month  & out_uco_diff < 10 ~ uco_date,
+    bhe_month == out_month ~ out_date,
+    is.na(bhe_date) & uco_month == out_month ~ uco_date,
+    is.na(bhe_date) & is.na(uco_date) ~ uco_date,
+    bhe_month < uco_month & out_uco_diff > 10 ~ uco_date,
+    is.na(uco_date) & out_bhe_diff > 20 ~ bhe_date,
+    bhe_month < uco_month & out_uco_diff == 10 ~ uco_date,
+    is.na(uco_date) & out_bhe_diff <= 20 ~ out_date))
+# the only NA dates that remain are ones with nodate on them. 
+
+#get the ids and find the fire out dates from lio
+na_date_ids = bhe_cleaned %>% filter(is.na(end_date)) 
+
+# get the fire out dates from lio
+full.fires <- read.csv2("~/Google Drive/My Drive/OntBSdb/Clean_Tables/On_FireBS_full_v1.csv")
+fires.dates <- full.fires %>% 
+  select(c(raster_id, FIRE_OUT_D)) 
+
+# join them together
+na_date_ids <- na_date_ids %>% 
+  left_join(fires.dates, by = "raster_id") 
+
+na_date_ids <- na_date_ids %>% 
+  mutate(end_date = ymd(FIRE_OUT_D)) %>% 
+  select(-c(FIRE_OUT_D))
+
+#remove ids
+bhe_cleaned_1 <-bhe_cleaned %>% filter(!is.na(end_date)) 
+
+# join back
+bhe_cleaned_v1 <- rbind(bhe_cleaned_1, na_date_ids)
+
+bhe_cleaned_v1 <- bhe_cleaned_v1 %>% 
+  select(c(raster_id, fuel_type, end_date, objective, wx_station, start_date, final_size, latitude, longitude))
+
+write.csv(bhe_cleaned_v1,"~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/fire-information/clean/end-dates-fuel-types-86-2020.csv")
+  
+```
+
+
+
+
+

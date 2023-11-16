@@ -1,0 +1,628 @@
+---
+title: "brt-analysis-step-1"
+format: html
+editor: visual
+date: 2023-06-12
+---
+
+# Analysis setup
+
+### required packages
+
+```{r}
+library(caret)
+library(gbm)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(tidymodels)
+library(readr)
+```
+
+### read in fire data
+
+```{r}
+data_tlm <- read.csv("~/Work/PhD/MoistureAvailability//data/bs-moisture-lags-data-v0.csv")
+
+#clean names
+names(data_tlm) <- data_tlm %>% names () %>%  str_replace_all(.,"^X", "")
+```
+
+### read in covariates
+
+```{r}
+#covariates
+covariates <- read.csv("~/Google Drive/My Drive/boreal-fires-forest-area-calc/nwo-forest-cover-v0.csv")
+#select covariates of interest
+covariates <- select(covariates, c("raster_id", "coniferPercent", "forestPercent", "FIRE_FINAL", "FIRE_GENER", "Fire_Year"))
+
+
+#fwi
+fwi.dur <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/ontario-fire-disturbance-data/climate-data/fwi-90th-fire-duration.csv")
+#add rbr to the end of fire id
+fwi.dur2<- fwi.dur %>% 
+  mutate(raster_id = paste0(Fire_ID, "_rbr")) %>% 
+  select(-c(Fire_ID))
+
+```
+
+
+### clean data
+
+```{r}
+#join covariates to climate data and remove id
+data_tlm <- data_tlm %>% 
+semi_join(covariates, by = "raster_id") %>% 
+  left_join(fwi.dur2, by = "raster_id") %>% 
+  left_join(covariates, by = "raster_id") %>% select(-c(1))
+
+data_tlm <- data_tlm %>% drop_na()
+
+
+# Remove first column
+data_tlm_clean <- data_tlm %>%  
+  select(-c(1))
+
+#split data set into Extreme only and Median only
+
+med_tlm <- data_tlm_clean %>% 
+  select(-c(2))
+
+ext_tlm <- data_tlm_clean %>% 
+  select(-c(1))
+```
+
+### create testing and training data
+
+```{r}
+### Split data into test vs. training ###
+
+# Extreme
+set.seed(429)#set seed for reproducibility
+
+
+ext_split <- initial_split(ext_tlm, prop = 5/8)
+ext_train <- training(ext_split)
+ext_test  <- testing(ext_split)
+
+# Median
+set.seed(429)##set seed for reproducibility
+
+
+med_split <- initial_split(med_tlm, prop = 5/8)
+med_train <- training(med_split)
+med_test  <- testing(med_split)
+
+# remove forest and fwi
+ext_train <- ext_train %>% select(-c(forestPercent, coniferPercent, isi_90, bui_90, ffmc_90, dc_90, dmc_90, fwi_90))
+
+ext_test <- ext_test %>% select(-c(forestPercent, coniferPercent, isi_90, bui_90, ffmc_90, dc_90, dmc_90, fwi_90))
+
+med_train <- med_train %>% select(-c(forestPercent, coniferPercent, isi_90, bui_90, ffmc_90, dc_90, dmc_90, fwi_90))
+
+med_test <- med_test %>% select(-c(forestPercent, coniferPercent, isi_90, bui_90, ffmc_90, dc_90, dmc_90, fwi_90))
+
+```
+
+First thing is to set up the defaults of the model. These are the metrics that will be used for both trees we use RMSE. We also set up the control grid for tuning. Additionally, we set up the cross-validation process for our training model using 10-fold Cross-Validation
+
+# Burn Severity Extremes
+
+### set up defaults
+
+```{r}
+mset <- metric_set(rmse) 
+control <- control_grid(save_workflow = TRUE,
+                        save_pred = TRUE,
+                        extract = extract_model) # grid for tuning
+
+
+set.seed(429) #set seed for reproducibility
+
+ext_folds <- vfold_cv(ext_train, v = 10)
+```
+
+
+
+
+###  build up the recipe, or our model fit
+
+```{r}
+ext_fit = recipe(RBR_quant ~., data = ext_train) %>% 
+  step_normalize(all_numeric_predictors()) %>% 
+  step_zv(all_predictors()) %>% 
+  step_corr(all_numeric_predictors(), threshold = .8) %>% 
+  prep()
+```
+
+
+
+### Now to specify the model
+
+```{r}
+ext_tune_spec = 
+  boost_tree(trees =  tune(),
+             tree_depth = tune(),
+             learn_rate = tune(),
+             min_n = tune(),
+             sample_size = tune(),
+             loss_reduction = tune(),
+             mtry = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("xgboost", counts = FALSE)
+
+```
+
+
+### set workflow 
+
+```{r}
+ext_wf <- workflow() %>%
+  add_recipe(ext_fit) %>% 
+  add_model(ext_tune_spec)
+```
+
+
+### Run model with tuning grid 
+
+```{r}
+#Use 10-fold cross-validation to evaluate the model with different hyperparameters
+set.seed(429) #set seed for reproducibility
+
+ext_tune<-  ext_wf %>% 
+  tune_grid(resample = ext_folds,
+            metrics = mset,
+            control = control,
+            grid = crossing( 
+              trees = c(1000, 2000),
+              tree_depth = c(6),
+              learn_rate = c(0.005, 0.0025, 0.01),
+              min_n = c(2,10,15),
+              sample_size = c(0.6),
+              loss_reduction = c(5, 8),
+              mtry = c(0.5)))
+```
+
+### Use best tuning specifications to fit model to training data.
+
+```{r}
+set.seed(429) #set seed for reproducibility
+
+ext_fit <- ext_wf %>% 
+  finalize_workflow(select_best(ext_tune)) %>% 
+  fit(ext_train)
+```
+
+
+
+
+### Check out accuracy on testing dataset to see if we overfitted.
+```{r}
+set.seed(429)
+ext_fit_train <- ext_wf %>% 
+  finalize_workflow(select_best(ext_tune)) %>% fit(ext_train)
+ext_fit_test <- ext_wf %>% 
+  finalize_workflow(select_best(ext_tune)) %>% fit(ext_test)
+
+
+ext_best_params <- ext_tune %>%
+  tune::select_best("rmse")
+
+ext_model_final <- ext_tune_spec %>% 
+  finalize_model(ext_best_params)
+#this model needed to be more complex with node size of min_child_weight = 15 to avoid overfitting compared to median
+#save final model structure
+saveRDS(ext_model_final, "~/Desktop/OneDrive - University of Toronto/Projects/burn-severity-time-lagged-moisture/models/ext-model-final-259-clim-only.rds")
+
+
+# get accuracy
+train_processed <- bake(ext_fit,  new_data = ext_train)
+train_prediction <- ext_model_final %>%
+  # fit the model on all the training data
+  fit(
+    formula = RBR_quant ~ ., 
+    data    = train_processed
+  ) %>%
+  # predict the sale prices for the training data
+  predict(new_data = train_processed) %>%
+  bind_cols(ext_train)
+ext_score_train <- 
+  train_prediction %>%
+  yardstick::metrics(RBR_quant, .pred) %>%
+  mutate(.estimate = format(round(.estimate, 2), big.mark = ","))
+
+test_processed <- bake(ext_fit,  new_data = ext_test)
+test_prediction <- ext_model_final %>%
+  # fit the model on all the training data
+  fit(
+    formula = RBR_quant ~ ., 
+    data    = test_processed
+  ) %>%
+  # predict the sale prices for the training data
+  predict(new_data = test_processed) %>%
+  bind_cols(ext_test)
+ext_score_test <- 
+  test_prediction %>%
+  yardstick::metrics(RBR_quant, .pred) %>%
+  mutate(.estimate = format(round(.estimate, 2), big.mark = ","))
+ext_score_test
+ext_score_train
+
+write.csv(ext_score_test, "~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/ext-score-test-259.csv")
+
+write.csv(ext_score_train, "~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/ext-score-train-259.csv")
+```
+
+
+### Extract and visualize variable importance
+
+```{r}
+ext_imp <- xgboost::xgb.importance(model = extract_fit_engine(ext_fit))
+
+ext_imp %>%
+  mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+  dplyr::slice_max(Gain, n = 10) %>% 
+  ggplot(aes(Gain, Feature, fill = Feature)) +
+  geom_col() + scale_fill_viridis_d()+ theme_bw()  +
+  theme(legend.position="none") + 
+  labs(title = "Burn Severity Extremes", y = "Predictor") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+# save variable importance as csv
+write.csv(ext_imp, "~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/brt-extremes-imp-259.csv")
+
+
+```
+
+# Median wildfire Burn Severity 
+
+### set up defaults
+```{r}
+mset <- metric_set(rmse) # metric is accuracy
+control <- control_grid(save_workflow = TRUE,
+                        save_pred = TRUE,
+                        extract = extract_model) # grid for tuning
+
+
+#10 fold cross val
+cvFolds_med <- med_train %>% vfold_cv(10)
+```
+
+
+
+### build recipe
+```{r}
+med_rec = recipe(RBR_median ~., data = med_train) %>% 
+  step_normalize(all_predictors()) %>% 
+  step_zv(all_predictors()) %>% 
+  step_corr(all_numeric_predictors(), threshold = .8) %>% 
+  prep()
+```
+
+### specify BRT model
+
+```{r}
+med_tune_spec = 
+  boost_tree(trees =tune(),
+             tree_depth = tune(),
+             learn_rate = tune(),
+             min_n = tune(),
+             sample_size = tune(),
+             loss_reduction = tune(),
+             mtry = tune()) %>% 
+  set_mode("regression") %>% 
+  set_engine("xgboost", counts = FALSE)
+
+
+```
+
+
+### set workflow
+
+```{r}
+med_wf <- workflow() %>%
+  add_recipe(med_rec) %>% 
+  add_model(med_tune_spec)
+```
+
+
+### use CV to evaluate the model with different hyperparameters
+```{r}
+set.seed(429)
+med_tune<-  med_wf %>% 
+  tune_grid(resamples = cvFolds_med,
+            metrics = mset,
+            control = control,
+            grid = crossing( 
+              trees = c(1000, 2000),
+              tree_depth = c(6),
+              learn_rate = c(0.01, 0.005),
+              sample_size = c(0.6, 0.7),
+              loss_reduction = c(5, 8, 15),
+              min_n = c(1),
+              mtry = c(0.5)))
+
+#resamples = cvFolds_med,
+           # metrics = mset,
+          #  control = control,
+           # grid = crossing( 
+            #  trees = c(1000),
+             # tree_depth = c(2,3,4,5),
+            #  learn_rate = c(0.001),
+             # min_n = c(5),
+              #mtry = c(0.5)))
+```
+
+
+
+### Use best tuning specifications to fit model to training data.
+```{r}
+set.seed(429)
+med_fit_train <- med_wf %>% 
+  finalize_workflow(select_best(med_tune)) %>% fit(med_train)
+med_fit_test <- med_wf %>% 
+  finalize_workflow(select_best(med_tune)) %>% fit(med_test)
+
+
+med_best_params <- med_tune %>%
+  tune::select_best("rmse")
+
+med_model_final <- med_tune_spec %>% 
+  finalize_model(med_best_params)
+#save final model structure
+saveRDS(med_model_final, "~/Desktop/OneDrive - University of Toronto/Projects/burn-severity-time-lagged-moisture/models/med-model-final-259-clim-only.rds")
+
+# get accuracy
+train_processed <- bake(med_rec,  new_data = med_train)
+train_prediction <- med_model_final %>%
+  # fit the model on all the training data
+  fit(
+    formula = RBR_median ~ ., 
+    data    = train_processed
+  ) %>%
+  # predict the sale prices for the training data
+  predict(new_data = train_processed) %>%
+  bind_cols(med_train)
+med_score_train <- 
+  train_prediction %>%
+  yardstick::metrics(RBR_median, .pred) %>%
+  mutate(.estimate = format(round(.estimate, 2), big.mark = ","))
+
+test_processed <- bake(med_rec,  new_data = med_test)
+test_prediction <- med_model_final %>%
+  # fit the model on all the training data
+  fit(
+    formula = RBR_median ~ ., 
+    data    = test_processed
+  ) %>%
+  # predict the sale prices for the training data
+  predict(new_data = test_processed) %>%
+  bind_cols(med_test)
+med_score_test <- 
+  test_prediction %>%
+  yardstick::metrics(RBR_median, .pred) %>%
+  mutate(.estimate = format(round(.estimate, 2), big.mark = ","))
+med_score_test
+med_score_train
+```
+
+
+### Extract and plot variable importance
+
+```{r}
+med_imp <- xgboost::xgb.importance(model = extract_fit_engine(med_fit))
+
+med_imp %>%
+  mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+  dplyr::slice_max(Gain, n = 10) %>% 
+  ggplot(aes(Gain, Feature, fill = Feature)) +
+  geom_col() + scale_fill_viridis_d()+ theme_bw()  +
+  theme(legend.position="none") + 
+  labs(title = "Median Burn Severity within AOU", y = "Predictor") +
+  theme(plot.title = element_text(hjust = 0.5)) 
+
+# save variable importance as csv
+write.csv(med_imp, "~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/brt-med-imp-259.csv")
+```
+
+# Plot model results
+```{r}
+med_imp <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/brt-med-imp-259.csv")
+ext_imp <- read.csv("~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/brt-extremes-imp-259.csv")
+# figure S1 full model relative importance -----------
+# Median
+library(gridExtra)
+library(lubridate)
+library(ggplot2)
+library(EnvStats)
+library(ggpubr)
+library(ggpattern)
+library(viridis)
+library(DALEXtra)
+library(tidyverse)
+
+full.imp.im.plot= med_imp %>%
+  mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+      mutate(Feature = fct_rev(Feature)) %>% 
+  mutate(Predictor_Class = case_when(
+    grepl("C", Feature) ~ "Climate Moisture Index",
+    grepl("R", Feature) ~ "Relative Humidity",
+  )) %>% 
+  mutate(Temporal_Dynamics = case_when(
+    grepl("yCsum", Feature) ~ "Yearly",
+    grepl("yRmean", Feature) ~ "Yearly",
+    grepl("mCsum", Feature) ~ "Monthly",
+    grepl("mRmean", Feature) ~ "Monthly",
+    grepl('m', Feature) ~ "Monthly",
+    grepl('y', Feature) ~ "Yearly",
+  )) %>% 
+  ggplot(aes(Gain, Feature, fill = Predictor_Class, width = .8), color = "black") +
+  geom_col_pattern(
+    aes(pattern = Temporal_Dynamics),
+    colour = "black",
+    pattern_fill = "black",
+    pattern_angle = 45,
+    pattern_density = 0.05,
+    pattern_spacing = 0.03,
+    position = position_dodge2(preserve = 'single')) +
+  scale_pattern_manual(values = c("none", "stripe"), "Temporal Dynamics",
+                       guide = guide_legend(override.aes = list(fill = "white"))) +
+  theme(text = element_text(size = 10)) +
+  scale_fill_manual(values = c( "purple", "coral"), "Climate Predictor", 
+                    guide = guide_legend(override.aes = list(pattern = "none")))+
+  theme_bw()+
+  labs(title = "Median Burn Severity",  x = "Relative Influence (%)", y = "Predictors") +
+  scale_x_continuous(labels = scales::percent)+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(panel.background = element_blank()) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) 
+
+full.imp.im.plot <- full.imp.im.plot + coord_flip() 
+```
+
+### Extremes
+```{r}
+
+full.imp.iq.plot= ext_imp %>%
+  mutate(Feature = fct_reorder(Feature, Gain)) %>% 
+      mutate(Feature = fct_rev(Feature)) %>% 
+  mutate(Predictor_Class = case_when(
+    grepl("C", Feature) ~ "Climate Moisture Index",
+    grepl("R", Feature) ~ "Relative Humidity"
+
+    
+  )) %>% 
+  mutate(Temporal_Dynamics = case_when(
+    grepl("yCsum", Feature) ~ "Yearly",
+    grepl("yRmean", Feature) ~ "Yearly",
+    grepl("mCsum", Feature) ~ "Monthly",
+    grepl("mRmean", Feature) ~ "Monthly",
+    grepl('m', Feature) ~ "Monthly",
+    grepl('y', Feature) ~ "Yearly",
+  )) %>% 
+  ggplot(aes(Gain, Feature, fill = Predictor_Class, width = .8), color = "black") +
+  geom_col_pattern(
+    aes(pattern = Temporal_Dynamics),
+    colour = "black",
+    pattern_fill = "black",
+    pattern_angle = 45,
+    pattern_density = 0.05,
+    pattern_spacing = 0.03,
+    position = position_dodge2(preserve = 'single')) +
+  scale_pattern_manual(values = c("none", "stripe" ), "Temporal Dynamics",
+                       guide = guide_legend(override.aes = list(fill = "white"))) +
+  theme(text = element_text(size = 10)) +
+  coord_flip()+
+  
+  scale_fill_manual(values = c( "purple", "coral"), "Climate Predictor", 
+                    guide = guide_legend(override.aes = list(pattern = "none")))+
+  theme_bw()+
+  labs(title = "Burn Severity Extreme",  x = "Relative Influence (%)", y = "Predictors") +
+  scale_x_continuous(labels = scales::percent)+
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(panel.background = element_blank()) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+full.imp.iq.plot
+```
+
+
+```{r}
+# arrange plots
+ggarrange(full.imp.im.plot, 
+          full.imp.iq.plot,
+          labels = c("A", "B"),
+          ncol = 1, nrow = 2, widths = c(1,1),
+          heights = c(5,5),
+          common.legend = TRUE, legend="bottom")
+
+```
+
+
+
+### Figure S2 model performance 
+```{r}
+# median
+med_tib_training = med_res %>%  collect_metrics(summarize = FALSE)  
+med_tib_training = med_tib_training %>%  mutate(dataset = c("training", "training","training", "training", "training", "training", "training", "training", "training", "training",
+                                                    "training", "training","training", "training","training", "training","training", "training","training", "training"))
+med_tib_test = medtest_res %>%  collect_metrics(summarize = FALSE)
+med_tib_test = med_tib_test %>%  mutate(dataset = c("testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing", "testing",
+                                            "testing", "testing", "testing", "testing", "testing", "testing"))
+
+xlabels = c("Testing", "Training")
+perf_tib_med = med_tib_training %>%  full_join(med_tib_test)  %>% 
+  pivot_wider( names_from = ".metric",
+               values_from = ".estimate") 
+#save it
+write.csv(perf_tib_med, "~/Desktop/OneDrive - University of Toronto/Data/moisture-data-chap1/brt-med-performance-cp50.csv")
+
+perf_plotmed_rmse = perf_tib_med %>%  
+  ggplot(aes(x = dataset, y = rmse, fill = dataset)) +
+  geom_boxplot(fill = "darkgrey", alpha=0.7) +
+  stat_summary(fun=mean, geom="point", shape=20, size=8, color="black", fill="black") +
+  theme(legend.position="none") +
+  theme_bw() + 
+  theme(legend.position="none") +
+  labs(title = "Median Burn Severity", y= "RMSE") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_discrete(labels = xlabels)+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size =15))
+
+
+perf_plotmed_rsq = perf_tib_med %>%  
+  ggplot(aes(x = dataset, y = rsq, fill = dataset)) +
+  geom_boxplot(fill= "darkgrey", alpha=0.7) +
+  stat_summary(fun=mean, geom="point", shape=20, size=8, color="black", fill="black") +
+  theme(legend.position="none") + 
+  theme_bw() + 
+  theme(legend.position="none") +
+  labs(title = "Median Burn Severity",  y= "R-squared") +
+  theme(plot.title = element_text(hjust = 0.5))+
+  theme(axis.title.x = element_blank()) +
+  scale_x_discrete(labels = xlabels)+
+  theme(axis.title.x = element_blank(), 
+        axis.text = element_text(size = 10),
+        plot.title = element_text(size =15)) 
+
+```
+
+```{r}
+ext_score_test1 <- ext_score_test %>% as.data.frame() %>% 
+  select(c(".estimate", ".metric")) %>% 
+  dplyr::slice(1:2) %>% 
+  rename(metric = ".metric", estimate = ".estimate") %>% 
+  mutate(set = rep(c("test"), 2))
+ext_score_train1 <- ext_score_train %>% as.data.frame() %>% 
+  select(c(".estimate", ".metric")) %>% 
+  dplyr::slice(1:2) %>% 
+  rename(metric = ".metric", estimate = ".estimate") %>% 
+  mutate(set = rep(c("train"), 2))
+
+med_score_test1 <- med_score_test %>% as.data.frame() %>% 
+  select(c(".estimate", ".metric")) %>% 
+  dplyr::slice(1:2) %>% 
+  rename(metric = ".metric", estimate = ".estimate") %>% 
+  mutate(set = rep(c("test"), 2))
+med_score_train1 <-  ext_score_train %>% as.data.frame() %>% 
+  select(c(".estimate", ".metric")) %>% 
+  dplyr::slice(1:2) %>% 
+  rename(metric = ".metric", estimate = ".estimate") %>% 
+  mutate(set = rep(c("train"), 2))
+
+ext_score <- rbind(ext_score_test1, ext_score_train1)
+med_score <- rbind(med_score_test1, med_score_train1)
+
+ext_score <- ext_score %>% relocate(estimate, .after = metric) %>% rename(Metric = metric, Estimate = estimate)
+med_score <- med_score %>% relocate(estimate, .after = metric) %>% rename(Metric = metric, Estimate = estimate)
+
+ext_kbl <- kable(ext_score[,1:2], booktabs = TRUE, align = "r") %>% group_rows(index = c("test" = 2, "train"= 2))
+ext_kbl %>% kable_styling(bootstrap_options = "striped", full_width = F) %>% column_spec(2, bold = T) %>% 
+  add_indent(c(2,3,4))
+
+med_kbl <- kable(med_score[,1:2], booktabs = TRUE, align = "r") %>% group_rows(index = c("test" = 2, "train"= 2))
+med_kbl %>% kable_styling(bootstrap_options = "striped", full_width = F) %>% column_spec(2, bold = T) %>% 
+  add_indent(c(2,3,4))
+```
